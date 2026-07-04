@@ -6,7 +6,7 @@ from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
-groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 CHROMA_PATH = "chroma_db"
 
