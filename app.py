@@ -166,22 +166,20 @@ try:
         context = "\n\n".join(results["documents"][0])
         sources = list(set(r["source"] for r in results["metadatas"][0]))
 
-        prompt = f"""You are Aquanis, a helpful assistant for hydraulics engineers and students.
-Answer the question using ONLY the context below.
-If the answer is not in the context, say "I don't have that information in my materials."
+        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Use the course context below to answer questions. If the answer is not in the context, say you do not have that information in your materials. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
 
-Context:
-{context}
+        conversation_messages = [{"role": "system", "content": system_prompt}]
 
-Question: {question}
-"""
+        for msg in current_chat["messages"]:
+            conversation_messages.append({"role": msg["role"], "content": msg["content"]})
+
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=conversation_messages
                 )
-                answer = response.choices[0].message.content + f"\n\n📄 *Sources: {', '.join(sources)}*"
+                answer = response.choices[0].message.content + "\n\nSources: " + ", ".join(sources)
                 st.markdown(answer)
 
         current_chat["messages"].append({"role": "assistant", "content": answer})
