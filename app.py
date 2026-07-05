@@ -35,14 +35,6 @@ st.markdown("""
 [data-testid="stChatMessage"] {
     font-size: 15px;
 }
-.main-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #dbe9f7;
-    margin-bottom: 12px;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,6 +58,9 @@ if "current_chat_id" not in st.session_state:
     else:
         st.session_state.current_chat_id = None
 
+if "creating_new_chat" not in st.session_state:
+    st.session_state.creating_new_chat = False
+
 @st.cache_resource
 def load_resources():
     model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -80,15 +75,29 @@ with st.sidebar:
     st.markdown("### 💧 Aquanis")
 
     if st.button("+ New chat", use_container_width=True):
-        new_id = str(uuid.uuid4())
-        st.session_state.chats[new_id] = {
-            "title": "New chat",
-            "messages": [],
-            "created": datetime.now().isoformat()
-        }
-        st.session_state.current_chat_id = new_id
-        save_chats(st.session_state.chats)
+        st.session_state.creating_new_chat = True
         st.rerun()
+
+    if st.session_state.creating_new_chat:
+        new_name = st.text_input("Chat name", placeholder="e.g. Reynolds number", key="new_chat_name")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Create", use_container_width=True):
+                new_id = str(uuid.uuid4())
+                title = new_name.strip() if new_name.strip() else "New chat"
+                st.session_state.chats[new_id] = {
+                    "title": title,
+                    "messages": [],
+                    "created": datetime.now().isoformat()
+                }
+                st.session_state.current_chat_id = new_id
+                st.session_state.creating_new_chat = False
+                save_chats(st.session_state.chats)
+                st.rerun()
+        with col_b:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state.creating_new_chat = False
+                st.rerun()
 
     st.markdown("---")
     st.caption("Recent chats")
@@ -99,9 +108,19 @@ with st.sidebar:
         reverse=True
     ):
         label = chat["title"] if chat["title"] else "New chat"
-        if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
-            st.session_state.current_chat_id = chat_id
-            st.rerun()
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+                st.session_state.current_chat_id = chat_id
+                st.rerun()
+        with col2:
+            if st.button("🗑️", key=f"del_{chat_id}"):
+                del st.session_state.chats[chat_id]
+                if st.session_state.current_chat_id == chat_id:
+                    remaining = list(st.session_state.chats.keys())
+                    st.session_state.current_chat_id = remaining[0] if remaining else None
+                save_chats(st.session_state.chats)
+                st.rerun()
 
     st.markdown("---")
     st.markdown("👤 **Student**")
@@ -112,29 +131,11 @@ current_id = st.session_state.current_chat_id
 if current_id is None:
     st.markdown("### 💧 Welcome to Aquanis")
     st.caption("Start a new chat to ask a question about your hydraulics course materials.")
-    if st.button("+ Start new chat"):
-        new_id = str(uuid.uuid4())
-        st.session_state.chats[new_id] = {
-            "title": "New chat",
-            "messages": [],
-            "created": datetime.now().isoformat()
-        }
-        st.session_state.current_chat_id = new_id
-        save_chats(st.session_state.chats)
-        st.rerun()
     st.stop()
 
 current_chat = st.session_state.chats[current_id]
 
-col1, col2 = st.columns([6, 1])
-with col1:
-    st.markdown(f"#### {current_chat['title']}")
-with col2:
-    if st.button("📋 Copy"):
-        full_text = "\n\n".join(
-            f"{m['role'].upper()}: {m['content']}" for m in current_chat["messages"]
-        )
-        st.code(full_text)
+st.markdown(f"#### {current_chat['title']}")
 
 for msg in current_chat["messages"]:
     with st.chat_message(msg["role"]):
@@ -144,9 +145,6 @@ question = st.chat_input("Ask a question about hydraulics...")
 
 if question:
     current_chat["messages"].append({"role": "user", "content": question})
-
-    if current_chat["title"] == "New chat":
-        current_chat["title"] = question[:40] + ("..." if len(question) > 40 else "")
 
     with st.chat_message("user"):
         st.markdown(question)
