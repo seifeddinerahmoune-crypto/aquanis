@@ -48,28 +48,19 @@ try:
     </style>
     """, unsafe_allow_html=True)
 
-    # ---------- Load / save chats (per user) ----------
-    def load_all_chats():
+    # ---------- Load / save chats ----------
+    def load_chats():
         if os.path.exists(CHATS_FILE):
             with open(CHATS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
-    def save_all_chats(all_chats):
+    def save_chats(chats):
         with open(CHATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(all_chats, f, ensure_ascii=False, indent=2)
-
-    def load_chats(user_email):
-        all_chats = load_all_chats()
-        return all_chats.get(user_email, {})
-
-    def save_chats(user_email, chats):
-        all_chats = load_all_chats()
-        all_chats[user_email] = chats
-        save_all_chats(all_chats)
+            json.dump(chats, f, ensure_ascii=False, indent=2)
 
     if "chats" not in st.session_state:
-        st.session_state.chats = load_chats(st.user.email)
+        st.session_state.chats = load_chats()
 
     if "current_chat_id" not in st.session_state:
         if st.session_state.chats:
@@ -111,7 +102,7 @@ try:
                     }
                     st.session_state.current_chat_id = new_id
                     st.session_state.creating_new_chat = False
-                    save_chats(st.user.email, st.session_state.chats)
+                    save_chats(st.session_state.chats)
                     st.rerun()
             with col_b:
                 if st.button("Cancel", use_container_width=True):
@@ -138,7 +129,7 @@ try:
                     if st.session_state.current_chat_id == chat_id:
                         remaining = list(st.session_state.chats.keys())
                         st.session_state.current_chat_id = remaining[0] if remaining else None
-                    save_chats(st.user.email, st.session_state.chats)
+                    save_chats(st.session_state.chats)
                     st.rerun()
 
         st.markdown("---")
@@ -163,3 +154,40 @@ try:
             st.markdown(msg["content"])
 
     question = st.chat_input("Ask a question about hydraulics...")
+
+    if question:
+        current_chat["messages"].append({"role": "user", "content": question})
+
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        query_embedding = model.encode([question]).tolist()
+        results = collection.query(query_embeddings=query_embedding, n_results=4)
+        context = "\n\n".join(results["documents"][0])
+        sources = list(set(r["source"] for r in results["metadatas"][0]))
+
+        prompt = f"""You are Aquanis, a helpful assistant for hydraulics engineers and students.
+Answer the question using ONLY the context below.
+If the answer is not in the context, say "I don't have that information in my materials."
+
+Context:
+{context}
+
+Question: {question}
+"""
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                answer = response.choices[0].message.content + f"\n\n📄 *Sources: {', '.join(sources)}*"
+                st.markdown(answer)
+
+        current_chat["messages"].append({"role": "assistant", "content": answer})
+        save_chats(st.session_state.chats)
+        st.rerun()
+
+except Exception as e:
+    st.error("An error occurred while running Aquanis:")
+    st.code(traceback.format_exc())
