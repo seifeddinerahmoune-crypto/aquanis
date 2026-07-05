@@ -166,7 +166,7 @@ try:
         context = "\n\n".join(results["documents"][0])
         sources = list(set(r["source"] for r in results["metadatas"][0]))
 
-        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Use the course context below to answer questions. If the answer is not in the context, say you do not have that information in your materials. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
+        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Always answer in the same language the student used in their latest question, whether that is English, French, Arabic, or any other language. Use the course context below to answer questions. If the answer is not in the context, say you do not have that information in your materials, in the student's language. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
 
         conversation_messages = [{"role": "system", "content": system_prompt}]
 
