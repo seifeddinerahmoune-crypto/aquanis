@@ -7,11 +7,19 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 from groq import Groq
 
+st.set_page_config(page_title="Aquanis", page_icon="💧", layout="wide")
+
+# ---------- Require Google sign-in ----------
+if not st.user.is_logged_in:
+    st.markdown("### 💧 Welcome to Aquanis")
+    st.caption("Sign in with your Google account to continue.")
+    if st.button("Sign in with Google"):
+        st.login()
+    st.stop()
+
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 CHROMA_PATH = "chroma_db"
 CHATS_FILE = "chats.json"
-
-st.set_page_config(page_title="Aquanis", page_icon="💧", layout="wide")
 
 # ---------- Blue water theme ----------
 st.markdown("""
@@ -118,60 +126,3 @@ with st.sidebar:
                 del st.session_state.chats[chat_id]
                 if st.session_state.current_chat_id == chat_id:
                     remaining = list(st.session_state.chats.keys())
-                    st.session_state.current_chat_id = remaining[0] if remaining else None
-                save_chats(st.session_state.chats)
-                st.rerun()
-
-    st.markdown("---")
-    st.markdown("👤 **Student**")
-
-# ---------- Main area ----------
-current_id = st.session_state.current_chat_id
-
-if current_id is None:
-    st.markdown("### 💧 Welcome to Aquanis")
-    st.caption("Start a new chat to ask a question about your hydraulics course materials.")
-    st.stop()
-
-current_chat = st.session_state.chats[current_id]
-
-st.markdown(f"#### {current_chat['title']}")
-
-for msg in current_chat["messages"]:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-question = st.chat_input("Ask a question about hydraulics...")
-
-if question:
-    current_chat["messages"].append({"role": "user", "content": question})
-
-    with st.chat_message("user"):
-        st.markdown(question)
-
-    query_embedding = model.encode([question]).tolist()
-    results = collection.query(query_embeddings=query_embedding, n_results=4)
-    context = "\n\n".join(results["documents"][0])
-    sources = list(set(r["source"] for r in results["metadatas"][0]))
-
-    prompt = f"""You are Aquanis, a helpful assistant for hydraulics engineers and students.
-Answer the question using ONLY the context below.
-If the answer is not in the context, say "I don't have that information in my materials."
-
-Context:
-{context}
-
-Question: {question}
-"""
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            answer = response.choices[0].message.content + f"\n\n📄 *Sources: {', '.join(sources)}*"
-            st.markdown(answer)
-
-    current_chat["messages"].append({"role": "assistant", "content": answer})
-    save_chats(st.session_state.chats)
-    st.rerun()
