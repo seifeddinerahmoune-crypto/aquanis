@@ -76,7 +76,11 @@ def load_resources():
     collection = client.get_collection("aquanis_docs")
     return model, collection
 
-model, collection = load_resources()
+try:
+    model, collection = load_resources()
+except Exception as e:
+    st.error(f"Failed to load resources: {e}")
+    st.stop()
 
 # ---------- Sidebar ----------
 with st.sidebar:
