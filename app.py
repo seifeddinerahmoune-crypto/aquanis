@@ -22,29 +22,7 @@ CHROMA_PATH = "chroma_db"
 CHATS_FILE = "chats.json"
 
 # ---------- Blue water theme ----------
-st.markdown("""
-<style>
-[data-testid="stSidebar"] {
-    background-color: #0d2b4e;
-}
-[data-testid="stSidebar"] * {
-    color: #e6f1fb !important;
-}
-.stButton button {
-    background-color: transparent;
-    border: none;
-    text-align: left;
-    color: #e6f1fb;
-}
-.stButton button:hover {
-    background-color: #16406e;
-    color: white;
-}
-[data-testid="stChatMessage"] {
-    font-size: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
+
 
 # ---------- Load / save chats ----------
 def load_chats():
