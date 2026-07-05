@@ -162,4 +162,4 @@ try:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    question = st.chat_input("Ask a
+    question = st.chat_input("Ask a question about hydraulics...")
