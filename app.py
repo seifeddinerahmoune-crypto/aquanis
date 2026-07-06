@@ -2,6 +2,7 @@ import traceback
 import os
 import json
 import uuid
+import base64
 from datetime import datetime
 import streamlit as st
 from sentence_transformers import SentenceTransformer
@@ -33,6 +34,7 @@ TRANSLATIONS = {
         "sources_label": "Sources",
         "language_label": "Interface language",
         "delete": "Delete",
+        "upload_label": "Upload an image (diagram, problem sheet, etc.)",
     },
     "fr": {
         "app_name": "Aquanis",
@@ -56,6 +58,7 @@ TRANSLATIONS = {
         "sources_label": "Sources",
         "language_label": "Langue de l'interface",
         "delete": "Supprimer",
+        "upload_label": "Téléverser une image (schéma, exercice, etc.)",
     },
     "ar": {
         "app_name": "Aquanis",
@@ -79,6 +82,7 @@ TRANSLATIONS = {
         "sources_label": "المصادر",
         "language_label": "لغة الواجهة",
         "delete": "حذف",
+        "upload_label": "قم بتحميل صورة (مخطط، ورقة تمرين، إلخ)",
     },
 }
 
@@ -284,12 +288,27 @@ try:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    uploaded_image = st.file_uploader(
+        t["upload_label"],
+        type=["png", "jpg", "jpeg"],
+        key="image_uploader"
+    )
+
     question = st.chat_input(t["chat_input_placeholder"])
 
     if question:
+        image_data_url = None
+        if uploaded_image is not None:
+            image_bytes = uploaded_image.read()
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            mime_type = uploaded_image.type
+            image_data_url = "data:" + mime_type + ";base64," + base64_image
+
         current_chat["messages"].append({"role": "user", "content": question})
 
         with st.chat_message("user"):
+            if uploaded_image is not None:
+                st.image(uploaded_image)
             st.markdown(question)
 
         query_embedding = model.encode([question]).tolist()
@@ -297,17 +316,29 @@ try:
         context = "\n\n".join(results["documents"][0])
         sources = list(set(r["source"] for r in results["metadatas"][0]))
 
-        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Always answer in the same language the student used in their latest question, whether that is English, French, Arabic, or any other language. Use the course context below to answer questions. If the answer is not in the context, say you do not have that information in your materials, in the student's language. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
+        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Always answer in the same language the student used in their latest question, whether that is English, French, Arabic, or any other language. Use the course context below to answer questions. If an image is provided, analyze it carefully and relate it to hydraulics concepts. If the answer is not in the context, say you do not have that information in your materials, in the student's language. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
 
         conversation_messages = [{"role": "system", "content": system_prompt}]
 
-        for msg in current_chat["messages"]:
-            conversation_messages.append({"role": msg["role"], "content": msg["content"]})
+        num_messages = len(current_chat["messages"])
+        for i, msg in enumerate(current_chat["messages"]):
+            if i == num_messages - 1 and image_data_url:
+                conversation_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": msg["content"]},
+                        {"type": "image_url", "image_url": {"url": image_data_url}}
+                    ]
+                })
+            else:
+                conversation_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"
 
         with st.chat_message("assistant"):
             with st.spinner(t["thinking"]):
                 response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=model_to_use,
                     messages=conversation_messages
                 )
                 answer = response.choices[0].message.content + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
