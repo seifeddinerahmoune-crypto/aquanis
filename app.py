@@ -14,8 +14,10 @@ TRANSLATIONS = {
     "en": {
         "app_name": "Aquanis",
         "welcome_title": "Welcome to Aquanis",
-        "welcome_caption": "Sign in with your Google account to continue.",
+        "welcome_caption": "Sign in to save your chat history, or continue without an account.",
         "sign_in": "Sign in with Google",
+        "continue_guest": "Continue without signing in",
+        "guest_warning": "Guest chats are not saved and will be lost if you refresh the page.",
         "new_chat": "+ New chat",
         "chat_name_label": "Chat name",
         "chat_name_placeholder": "e.g. Reynolds number",
@@ -23,6 +25,7 @@ TRANSLATIONS = {
         "cancel": "Cancel",
         "recent_chats": "Recent chats",
         "user_label": "User",
+        "guest_label": "Guest",
         "log_out": "Log out",
         "start_new_chat_caption": "Start a new chat to ask a question about your hydraulics course materials.",
         "chat_input_placeholder": "Ask a question about hydraulics...",
@@ -34,8 +37,10 @@ TRANSLATIONS = {
     "fr": {
         "app_name": "Aquanis",
         "welcome_title": "Bienvenue sur Aquanis",
-        "welcome_caption": "Connectez-vous avec votre compte Google pour continuer.",
+        "welcome_caption": "Connectez-vous pour sauvegarder vos discussions, ou continuez sans compte.",
         "sign_in": "Se connecter avec Google",
+        "continue_guest": "Continuer sans se connecter",
+        "guest_warning": "Les discussions invité ne sont pas sauvegardées et seront perdues si vous actualisez la page.",
         "new_chat": "+ Nouvelle discussion",
         "chat_name_label": "Nom de la discussion",
         "chat_name_placeholder": "ex: Nombre de Reynolds",
@@ -43,6 +48,7 @@ TRANSLATIONS = {
         "cancel": "Annuler",
         "recent_chats": "Discussions récentes",
         "user_label": "Utilisateur",
+        "guest_label": "Invité",
         "log_out": "Se déconnecter",
         "start_new_chat_caption": "Démarrez une nouvelle discussion pour poser une question sur vos cours d'hydraulique.",
         "chat_input_placeholder": "Posez une question sur l'hydraulique...",
@@ -54,8 +60,10 @@ TRANSLATIONS = {
     "ar": {
         "app_name": "Aquanis",
         "welcome_title": "مرحبا بك في Aquanis",
-        "welcome_caption": "سجل الدخول بحساب جوجل للمتابعة.",
+        "welcome_caption": "سجل الدخول لحفظ محادثاتك، أو تابع بدون حساب.",
         "sign_in": "تسجيل الدخول بجوجل",
+        "continue_guest": "المتابعة بدون تسجيل الدخول",
+        "guest_warning": "لا يتم حفظ محادثات الضيف وستفقد عند تحديث الصفحة.",
         "new_chat": "+ محادثة جديدة",
         "chat_name_label": "اسم المحادثة",
         "chat_name_placeholder": "مثال: عدد رينولدز",
@@ -63,6 +71,7 @@ TRANSLATIONS = {
         "cancel": "إلغاء",
         "recent_chats": "المحادثات الأخيرة",
         "user_label": "المستخدم",
+        "guest_label": "ضيف",
         "log_out": "تسجيل الخروج",
         "start_new_chat_caption": "ابدأ محادثة جديدة لطرح سؤال حول مواد مقرر الهيدروليك.",
         "chat_input_placeholder": "اطرح سؤالا حول الهيدروليك...",
@@ -81,13 +90,35 @@ t = TRANSLATIONS[st.session_state.ui_lang]
 if st.session_state.ui_lang == "ar":
     st.markdown("<style>body, .stApp { direction: rtl; }</style>", unsafe_allow_html=True)
 
+if "guest_mode" not in st.session_state:
+    st.session_state.guest_mode = False
+
+if "guest_id" not in st.session_state:
+    st.session_state.guest_id = "guest_" + str(uuid.uuid4())
+
 try:
-    if not st.user.is_logged_in:
+    is_logged_in = st.user.is_logged_in
+
+    if not is_logged_in and not st.session_state.guest_mode:
         st.markdown("### " + t["welcome_title"])
         st.caption(t["welcome_caption"])
-        if st.button(t["sign_in"]):
-            st.login()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(t["sign_in"], use_container_width=True):
+                st.login()
+        with col2:
+            if st.button(t["continue_guest"], use_container_width=True):
+                st.session_state.guest_mode = True
+                st.rerun()
+        st.caption(t["guest_warning"])
         st.stop()
+
+    if is_logged_in:
+        user_identity = st.user.email
+        display_name = st.user.name
+    else:
+        user_identity = st.session_state.guest_id
+        display_name = t["guest_label"]
 
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     CHROMA_PATH = "chroma_db"
@@ -127,17 +158,20 @@ try:
         with open(CHATS_FILE, "w", encoding="utf-8") as f:
             json.dump(all_chats, f, ensure_ascii=False, indent=2)
 
-    def load_chats(user_email):
+    def load_chats(user_key):
         all_chats = load_all_chats()
-        return all_chats.get(user_email, {})
+        return all_chats.get(user_key, {})
 
-    def save_chats(user_email, chats):
+    def save_chats(user_key, chats):
         all_chats = load_all_chats()
-        all_chats[user_email] = chats
+        all_chats[user_key] = chats
         save_all_chats(all_chats)
 
     if "chats" not in st.session_state:
-        st.session_state.chats = load_chats(st.user.email)
+        if is_logged_in:
+            st.session_state.chats = load_chats(user_identity)
+        else:
+            st.session_state.chats = {}
 
     if "current_chat_id" not in st.session_state:
         if st.session_state.chats:
@@ -191,7 +225,8 @@ try:
                     }
                     st.session_state.current_chat_id = new_id
                     st.session_state.creating_new_chat = False
-                    save_chats(st.user.email, st.session_state.chats)
+                    if is_logged_in:
+                        save_chats(user_identity, st.session_state.chats)
                     st.rerun()
             with col_b:
                 if st.button(t["cancel"], use_container_width=True):
@@ -218,13 +253,21 @@ try:
                     if st.session_state.current_chat_id == chat_id:
                         remaining = list(st.session_state.chats.keys())
                         st.session_state.current_chat_id = remaining[0] if remaining else None
-                    save_chats(st.user.email, st.session_state.chats)
+                    if is_logged_in:
+                        save_chats(user_identity, st.session_state.chats)
                     st.rerun()
 
         st.markdown("---")
-        st.markdown(t["user_label"] + ": " + st.user.name)
-        if st.button(t["log_out"]):
-            st.logout()
+        st.markdown(t["user_label"] + ": " + display_name)
+        if is_logged_in:
+            if st.button(t["log_out"]):
+                st.logout()
+        else:
+            if st.button(t["log_out"]):
+                st.session_state.guest_mode = False
+                st.session_state.chats = {}
+                st.session_state.current_chat_id = None
+                st.rerun()
 
     current_id = st.session_state.current_chat_id
 
@@ -271,7 +314,8 @@ try:
                 st.markdown(answer)
 
         current_chat["messages"].append({"role": "assistant", "content": answer})
-        save_chats(st.user.email, st.session_state.chats)
+        if is_logged_in:
+            save_chats(user_identity, st.session_state.chats)
         st.rerun()
 
 except Exception as e:
