@@ -248,7 +248,7 @@ try:
                     st.session_state.current_chat_id = chat_id
                     st.rerun()
             with col2:
-                if st.button(t["delete"][:1], key=f"del_{chat_id}"):
+                if st.button("\U0001F5D1", key=f"del_{chat_id}"):
                     del st.session_state.chats[chat_id]
                     if st.session_state.current_chat_id == chat_id:
                         remaining = list(st.session_state.chats.keys())
