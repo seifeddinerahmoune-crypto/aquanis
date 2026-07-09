@@ -335,25 +335,35 @@ try:
     model, collection = load_resources()
 
     # ---------- Sidebar ----------
-    with st.sidebar:
+    st.markdown("---")
         st.markdown(
-            f"<div style='display:flex; align-items:center; gap:10px; padding:4px 0 12px;'>"
-            f"<span class='aquanis-logo'>💧</span>"
-            f"<div><div style='font-weight:600; font-size:17px;'>Aquanis</div>"
-            f"<div style='font-size:12px; color:{MUTED_FG};'>🌊 Hydraulics AI</div></div></div>",
+            f"<p style='font-size:11px; letter-spacing:0.5px; color:{MUTED_FG}; text-transform:uppercase; margin-bottom:8px;'>{t['recent_chats']}</p>",
             unsafe_allow_html=True
         )
-        lang_names = list(lang_options.keys())
-        current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
-        selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
-        selected_lang_code = lang_options[selected_lang_name]
-        if selected_lang_code != st.session_state.ui_lang:
-            st.session_state.ui_lang = selected_lang_code
-            st.rerun()
 
-        if st.button(t["new_chat"], use_container_width=True, type="primary"):
-            st.session_state.creating_new_chat = True
-            st.rerun()
+        # Render "No conversations yet" if chats dictionary is empty
+        if not st.session_state.chats:
+            st.markdown(
+                f"<p style='font-size:13px; color:{MUTED_FG}; padding:4px 0;'>No conversations yet</p>",
+                unsafe_allow_html=True
+            )
+        else:
+            for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
+                label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+                        st.session_state.current_chat_id = chat_id
+                        st.rerun()
+                with col2:
+                    if st.button("🗑", key=f"del_{chat_id}"):
+                        del st.session_state.chats[chat_id]
+                        if st.session_state.current_chat_id == chat_id:
+                            remaining = list(st.session_state.chats.keys())
+                            st.session_state.current_chat_id = remaining[0] if remaining else None
+                        if is_logged_in:
+                            save_chats(user_identity, st.session_state.chats)
+                        st.rerun()
 
         if st.session_state.creating_new_chat:
             new_name = st.text_input(t["chat_name_label"], placeholder=t["chat_name_placeholder"], key="new_chat_name")
