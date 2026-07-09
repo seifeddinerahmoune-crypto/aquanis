@@ -336,7 +336,7 @@ try:
 
     # ---------- Sidebar ----------
     st.markdown("---")
-        st.markdown(
+    st.markdown(
             f"<p style='font-size:11px; letter-spacing:0.5px; color:{MUTED_FG}; text-transform:uppercase; margin-bottom:8px;'>{t['recent_chats']}</p>",
             unsafe_allow_html=True
         )
