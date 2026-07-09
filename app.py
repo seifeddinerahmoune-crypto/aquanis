@@ -14,11 +14,23 @@ from pptx import Presentation
 from docx import Document
 import openpyxl
 
-st.set_page_config(page_title="Aquanis", page_icon="water", layout="wide")
+st.set_page_config(page_title="Aquanis", page_icon="💧", layout="wide")
+
+# ---------- Design tokens (from your Next.js design) ----------
+BG = "#03111e"
+FG = "#e7f0f5"
+CARD = "#0a1c2c"
+PRIMARY = "#3dbfe2"
+PRIMARY_FG = "#010e1d"
+SECONDARY = "#112b40"
+MUTED_FG = "#879ca8"
+ACCENT = "#10364e"
+BORDER = "rgba(119, 184, 215, 0.15)"
+SIDEBAR = "#051729"
+SIDEBAR_ACCENT = "#0f283d"
 
 TRANSLATIONS = {
     "en": {
-        "app_name": "Aquanis",
         "welcome_title": "Welcome to Aquanis",
         "welcome_caption": "Sign in to save your chat history, or continue without an account.",
         "sign_in": "Sign in with Google",
@@ -33,15 +45,21 @@ TRANSLATIONS = {
         "user_label": "User",
         "guest_label": "Guest",
         "log_out": "Log out",
-        "start_new_chat_caption": "Start a new chat to ask a question about your hydraulics course materials.",
-        "chat_input_placeholder": "Ask a question, or attach a file...",
-        "thinking": "Thinking...",
+        "app_title": "New chat",
+        "welcome_sub": "Your AI companion for fluid mechanics and hydraulic engineering. Ask about pipe flow, pumps, open channels, hydrology, and more.",
+        "chat_input_placeholder": "Ask a question about hydraulics, or attach a file...",
+        "thinking": "Aquanis is thinking...",
         "sources_label": "Sources",
         "language_label": "Interface language",
-        "delete": "Delete",
+        "footer_note": "Aquanis can make mistakes. Verify critical hydraulic calculations.",
+        "suggestions": [
+            "Explain the Bernoulli equation with a practical example",
+            "How do I size a centrifugal pump for a pipeline?",
+            "Derive the Darcy-Weisbach head loss formula",
+            "What causes water hammer and how do I prevent it?",
+        ],
     },
     "fr": {
-        "app_name": "Aquanis",
         "welcome_title": "Bienvenue sur Aquanis",
         "welcome_caption": "Connectez-vous pour sauvegarder vos discussions, ou continuez sans compte.",
         "sign_in": "Se connecter avec Google",
@@ -56,15 +74,21 @@ TRANSLATIONS = {
         "user_label": "Utilisateur",
         "guest_label": "Invité",
         "log_out": "Se déconnecter",
-        "start_new_chat_caption": "Démarrez une nouvelle discussion pour poser une question sur vos cours d'hydraulique.",
+        "app_title": "Nouvelle discussion",
+        "welcome_sub": "Votre assistant IA pour la mécanique des fluides et l'hydraulique. Posez vos questions sur les écoulements, les pompes, les canaux ouverts, l'hydrologie, et plus encore.",
         "chat_input_placeholder": "Posez une question, ou joignez un fichier...",
-        "thinking": "Réflexion en cours...",
+        "thinking": "Aquanis réfléchit...",
         "sources_label": "Sources",
         "language_label": "Langue de l'interface",
-        "delete": "Supprimer",
+        "footer_note": "Aquanis peut faire des erreurs. Vérifiez les calculs hydrauliques critiques.",
+        "suggestions": [
+            "Expliquer l'équation de Bernoulli avec un exemple pratique",
+            "Comment dimensionner une pompe centrifuge pour une conduite ?",
+            "Démontrer la formule de perte de charge de Darcy-Weisbach",
+            "Quelles sont les causes du coup de bélier et comment l'éviter ?",
+        ],
     },
     "ar": {
-        "app_name": "Aquanis",
         "welcome_title": "مرحبا بك في Aquanis",
         "welcome_caption": "سجل الدخول لحفظ محادثاتك، أو تابع بدون حساب.",
         "sign_in": "تسجيل الدخول بجوجل",
@@ -79,12 +103,19 @@ TRANSLATIONS = {
         "user_label": "المستخدم",
         "guest_label": "ضيف",
         "log_out": "تسجيل الخروج",
-        "start_new_chat_caption": "ابدأ محادثة جديدة لطرح سؤال حول مواد مقرر الهيدروليك.",
+        "app_title": "محادثة جديدة",
+        "welcome_sub": "مساعدك الذكي في ميكانيكا الموائع والهندسة الهيدروليكية. اسأل عن جريان الأنابيب، المضخات، القنوات المفتوحة، الهيدرولوجيا، والمزيد.",
         "chat_input_placeholder": "اطرح سؤالا، أو أرفق ملفا...",
-        "thinking": "جارٍ التفكير...",
+        "thinking": "Aquanis يفكر...",
         "sources_label": "المصادر",
         "language_label": "لغة الواجهة",
-        "delete": "حذف",
+        "footer_note": "قد يخطئ Aquanis. تحقق من الحسابات الهيدروليكية الهامة.",
+        "suggestions": [
+            "اشرح معادلة برنولي بمثال عملي",
+            "كيف أحدد حجم مضخة طاردة مركزية لخط أنابيب؟",
+            "اشتق معادلة فقدان الضغط دارسي-فايسباخ",
+            "ما أسباب المطرقة المائية وكيف أمنعها؟",
+        ],
     },
 }
 
@@ -92,15 +123,110 @@ if "ui_lang" not in st.session_state:
     st.session_state.ui_lang = "en"
 
 t = TRANSLATIONS[st.session_state.ui_lang]
-
-if st.session_state.ui_lang == "ar":
-    st.markdown("<style>body, .stApp { direction: rtl; }</style>", unsafe_allow_html=True)
+is_rtl = st.session_state.ui_lang == "ar"
 
 if "guest_mode" not in st.session_state:
     st.session_state.guest_mode = False
-
 if "guest_id" not in st.session_state:
     st.session_state.guest_id = "guest_" + str(uuid.uuid4())
+
+# ---------- Global theme CSS ----------
+st.markdown(f"""
+<style>
+.stApp {{
+    background-color: {BG};
+    color: {FG};
+    {"direction: rtl;" if is_rtl else ""}
+}}
+[data-testid="stSidebar"] {{
+    background-color: {SIDEBAR};
+    border-right: 1px solid {BORDER};
+}}
+[data-testid="stSidebar"] * {{
+    color: {FG} !important;
+}}
+.stButton button {{
+    background-color: transparent;
+    border: 1px solid transparent;
+    text-align: left;
+    color: {FG};
+    border-radius: 10px;
+}}
+.stButton button:hover {{
+    background-color: {SIDEBAR_ACCENT};
+    color: {PRIMARY};
+    border: 1px solid {BORDER};
+}}
+[data-testid="stChatInput"] {{
+    background-color: {CARD};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+}}
+.aquanis-logo {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(61, 191, 226, 0.15);
+    font-size: 20px;
+    margin-right: 8px;
+}}
+.aquanis-header {{
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid {BORDER};
+    padding-bottom: 14px;
+    margin-bottom: 8px;
+}}
+.aquanis-user-bubble {{
+    display: flex;
+    justify-content: flex-end;
+    margin: 10px 0;
+}}
+.aquanis-user-bubble-inner {{
+    max-width: 75%;
+    background-color: {PRIMARY};
+    color: {PRIMARY_FG};
+    padding: 12px 16px;
+    border-radius: 18px 18px 4px 18px;
+    font-size: 14px;
+    line-height: 1.5;
+}}
+.aquanis-assistant-bubble {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 10px 0;
+}}
+.aquanis-assistant-bubble-inner {{
+    max-width: 75%;
+    background-color: {CARD};
+    border: 1px solid {BORDER};
+    color: {FG};
+    padding: 12px 16px;
+    border-radius: 18px 18px 18px 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+}}
+.aquanis-suggestion {{
+    border: 1px solid {BORDER};
+    background-color: {CARD};
+    border-radius: 14px;
+    padding: 14px;
+    font-size: 13px;
+    color: {FG};
+}}
+.aquanis-footer-note {{
+    text-align: center;
+    font-size: 11px;
+    color: {MUTED_FG};
+    margin-top: 8px;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 
 def extract_text_from_pdf(file_bytes):
@@ -138,6 +264,7 @@ try:
     is_logged_in = st.user.is_logged_in
 
     if not is_logged_in and not st.session_state.guest_mode:
+        st.markdown("<div class='aquanis-logo'>💧</div>", unsafe_allow_html=True)
         st.markdown("### " + t["welcome_title"])
         st.caption(t["welcome_caption"])
         col1, col2 = st.columns(2)
@@ -162,30 +289,6 @@ try:
     CHROMA_PATH = "chroma_db"
     CHATS_FILE = "chats.json"
 
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #0d2b4e;
-    }
-    [data-testid="stSidebar"] * {
-        color: #e6f1fb !important;
-    }
-    .stButton button {
-        background-color: transparent;
-        border: none;
-        text-align: left;
-        color: #e6f1fb;
-    }
-    .stButton button:hover {
-        background-color: #16406e;
-        color: white;
-    }
-    [data-testid="stChatMessage"] {
-        font-size: 15px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     def load_all_chats():
         if os.path.exists(CHATS_FILE):
             with open(CHATS_FILE, "r", encoding="utf-8") as f:
@@ -206,16 +309,12 @@ try:
         save_all_chats(all_chats)
 
     if "chats" not in st.session_state:
-        if is_logged_in:
-            st.session_state.chats = load_chats(user_identity)
-        else:
-            st.session_state.chats = {}
+        st.session_state.chats = load_chats(user_identity) if is_logged_in else {}
 
     if "current_chat_id" not in st.session_state:
-        if st.session_state.chats:
-            st.session_state.current_chat_id = list(st.session_state.chats.keys())[0]
-        else:
-            st.session_state.current_chat_id = None
+        st.session_state.current_chat_id = (
+            list(st.session_state.chats.keys())[0] if st.session_state.chats else None
+        )
 
     if "creating_new_chat" not in st.session_state:
         st.session_state.creating_new_chat = False
@@ -229,17 +328,14 @@ try:
 
     model, collection = load_resources()
 
+    # ---------- Sidebar ----------
     with st.sidebar:
-        st.markdown("### " + t["app_name"])
+        st.markdown("### 💧 Aquanis")
 
         lang_options = {"English": "en", "Français": "fr", "العربية": "ar"}
         lang_names = list(lang_options.keys())
         current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
-        selected_lang_name = st.selectbox(
-            t["language_label"],
-            lang_names,
-            index=lang_names.index(current_lang_name)
-        )
+        selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
         selected_lang_code = lang_options[selected_lang_name]
         if selected_lang_code != st.session_state.ui_lang:
             st.session_state.ui_lang = selected_lang_code
@@ -257,9 +353,7 @@ try:
                     new_id = str(uuid.uuid4())
                     title = new_name.strip() if new_name.strip() else t["new_chat"]
                     st.session_state.chats[new_id] = {
-                        "title": title,
-                        "messages": [],
-                        "created": datetime.now().isoformat()
+                        "title": title, "messages": [], "created": datetime.now().isoformat()
                     }
                     st.session_state.current_chat_id = new_id
                     st.session_state.creating_new_chat = False
@@ -274,11 +368,7 @@ try:
         st.markdown("---")
         st.caption(t["recent_chats"])
 
-        for chat_id, chat in sorted(
-            st.session_state.chats.items(),
-            key=lambda x: x[1]["created"],
-            reverse=True
-        ):
+        for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
             label = chat["title"] if chat["title"] else t["new_chat"]
             col1, col2 = st.columns([5, 1])
             with col1:
@@ -307,26 +397,73 @@ try:
                 st.session_state.current_chat_id = None
                 st.rerun()
 
+    # ---------- Main area ----------
     current_id = st.session_state.current_chat_id
 
     if current_id is None:
-        st.markdown("### " + t["welcome_title"])
-        st.caption(t["start_new_chat_caption"])
+        st.markdown(
+            "<div class='aquanis-header'><span class='aquanis-logo'>💧</span>"
+            "<span style='font-size:18px; font-weight:600;'>" + t["app_title"] + "</span></div>",
+            unsafe_allow_html=True
+        )
+        st.markdown("<div style='text-align:center; margin-top:40px;'><span style='font-size:48px;'>💧</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align:center;'>{t['welcome_title']}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; color:{MUTED_FG}; max-width:600px; margin:0 auto 24px;'>{t['welcome_sub']}</p>", unsafe_allow_html=True)
+
+        cols = st.columns(2)
+        clicked_suggestion = None
+        for i, suggestion in enumerate(t["suggestions"]):
+            with cols[i % 2]:
+                if st.button(suggestion, key=f"sugg_{i}", use_container_width=True):
+                    clicked_suggestion = suggestion
+
+        if clicked_suggestion:
+            new_id = str(uuid.uuid4())
+            st.session_state.chats[new_id] = {
+                "title": clicked_suggestion[:40], "messages": [], "created": datetime.now().isoformat()
+            }
+            st.session_state.current_chat_id = new_id
+            if is_logged_in:
+                save_chats(user_identity, st.session_state.chats)
+            st.session_state["pending_question"] = clicked_suggestion
+            st.rerun()
+
         st.stop()
 
     current_chat = st.session_state.chats[current_id]
 
-    st.markdown("#### " + current_chat["title"])
+    st.markdown(
+        "<div class='aquanis-header'><span class='aquanis-logo'>💧</span>"
+        "<span style='font-size:18px; font-weight:600;'>" + current_chat["title"] + "</span></div>",
+        unsafe_allow_html=True
+    )
 
     for msg in current_chat["messages"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        if msg["role"] == "user":
+            st.markdown(
+                f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{msg['content']}</div></div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                f"<div class='aquanis-assistant-bubble-inner'>{msg['content']}</div></div>",
+                unsafe_allow_html=True
+            )
 
     prompt = st.chat_input(
         t["chat_input_placeholder"],
         accept_file=True,
         file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls"]
     )
+
+    pending = st.session_state.pop("pending_question", None)
+    if pending and not prompt:
+        class FakePrompt:
+            text = pending
+            def __getitem__(self, key):
+                return []
+        prompt = FakePrompt()
 
     if prompt:
         question = prompt.text if prompt.text else ""
@@ -338,7 +475,6 @@ try:
         for f in uploaded_files:
             file_bytes = f.read()
             ext = f.name.split(".")[-1].lower()
-
             if ext in ["png", "jpg", "jpeg"]:
                 base64_image = base64.b64encode(file_bytes).decode("utf-8")
                 image_data_url = "data:" + f.type + ";base64," + base64_image
@@ -353,16 +489,10 @@ try:
 
         display_text = question if question else "(file attached)"
         current_chat["messages"].append({"role": "user", "content": display_text})
-
-        with st.chat_message("user"):
-            for f in uploaded_files:
-                ext = f.name.split(".")[-1].lower()
-                if ext in ["png", "jpg", "jpeg"]:
-                    st.image(f)
-                else:
-                    st.markdown("📎 " + f.name)
-            if question:
-                st.markdown(question)
+        st.markdown(
+            f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{display_text}</div></div>",
+            unsafe_allow_html=True
+        )
 
         query_embedding = model.encode([display_text]).tolist()
         results = collection.query(query_embeddings=query_embedding, n_results=4)
@@ -380,7 +510,6 @@ try:
             system_prompt += "\n\nAttached file content:\n" + extra_text_context
 
         conversation_messages = [{"role": "system", "content": system_prompt}]
-
         num_messages = len(current_chat["messages"])
         for i, msg in enumerate(current_chat["messages"]):
             if i == num_messages - 1 and image_data_url:
@@ -396,19 +525,22 @@ try:
 
         model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"
 
-        with st.chat_message("assistant"):
-            with st.spinner(t["thinking"]):
-                response = groq_client.chat.completions.create(
-                    model=model_to_use,
-                    messages=conversation_messages
-                )
-                answer = response.choices[0].message.content + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
-                st.markdown(answer)
+        with st.spinner(t["thinking"]):
+            response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
+            answer = response.choices[0].message.content + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+
+        st.markdown(
+            f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+            f"<div class='aquanis-assistant-bubble-inner'>{answer}</div></div>",
+            unsafe_allow_html=True
+        )
 
         current_chat["messages"].append({"role": "assistant", "content": answer})
         if is_logged_in:
             save_chats(user_identity, st.session_state.chats)
         st.rerun()
+
+    st.markdown(f"<p class='aquanis-footer-note'>{t['footer_note']}</p>", unsafe_allow_html=True)
 
 except Exception as e:
     st.error("An error occurred while running Aquanis:")
