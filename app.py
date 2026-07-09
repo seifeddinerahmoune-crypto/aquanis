@@ -16,7 +16,7 @@ import openpyxl
 
 st.set_page_config(page_title="Aquanis", page_icon="💧", layout="wide")
 
-# ---------- Design tokens (from your Next.js design) ----------
+# ---------- Design tokens ----------
 BG = "#03111e"
 FG = "#e7f0f5"
 CARD = "#0a1c2c"
@@ -117,6 +117,12 @@ TRANSLATIONS = {
             "ما أسباب المطرقة المائية وكيف أمنعها؟",
         ],
     },
+}
+
+lang_options = {
+    "English": "en",
+    "Français": "fr",
+    "العربية": "ar"
 }
 
 if "ui_lang" not in st.session_state:
@@ -329,7 +335,8 @@ try:
     model, collection = load_resources()
 
     # ---------- Sidebar ----------
-    st.markdown(
+    with st.sidebar:
+        st.markdown(
             f"<div style='display:flex; align-items:center; gap:10px; padding:4px 0 12px;'>"
             f"<span class='aquanis-logo'>💧</span>"
             f"<div><div style='font-weight:600; font-size:17px;'>Aquanis</div>"
@@ -382,7 +389,7 @@ try:
                     st.session_state.current_chat_id = chat_id
                     st.rerun()
             with col2:
-                if st.button("\U0001F5D1", key=f"del_{chat_id}"):
+                if st.button("🗑", key=f"del_{chat_id}"):
                     del st.session_state.chats[chat_id]
                     if st.session_state.current_chat_id == chat_id:
                         remaining = list(st.session_state.chats.keys())
