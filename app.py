@@ -329,10 +329,13 @@ try:
     model, collection = load_resources()
 
     # ---------- Sidebar ----------
-    with st.sidebar:
-        st.markdown("### 💧 Aquanis")
-
-        lang_options = {"English": "en", "Français": "fr", "العربية": "ar"}
+    st.markdown(
+            f"<div style='display:flex; align-items:center; gap:10px; padding:4px 0 12px;'>"
+            f"<span class='aquanis-logo'>💧</span>"
+            f"<div><div style='font-weight:600; font-size:17px;'>Aquanis</div>"
+            f"<div style='font-size:12px; color:{MUTED_FG};'>🌊 Hydraulics AI</div></div></div>",
+            unsafe_allow_html=True
+        )
         lang_names = list(lang_options.keys())
         current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
         selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
@@ -341,7 +344,7 @@ try:
             st.session_state.ui_lang = selected_lang_code
             st.rerun()
 
-        if st.button(t["new_chat"], use_container_width=True):
+        if st.button(t["new_chat"], use_container_width=True, type="primary"):
             st.session_state.creating_new_chat = True
             st.rerun()
 
@@ -366,10 +369,13 @@ try:
                     st.rerun()
 
         st.markdown("---")
-        st.caption(t["recent_chats"])
+        st.markdown(
+            f"<p style='font-size:11px; letter-spacing:0.5px; color:{MUTED_FG}; text-transform:uppercase; margin-bottom:8px;'>{t['recent_chats']}</p>",
+            unsafe_allow_html=True
+        )
 
         for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
-            label = chat["title"] if chat["title"] else t["new_chat"]
+            label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
             col1, col2 = st.columns([5, 1])
             with col1:
                 if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
@@ -386,16 +392,27 @@ try:
                     st.rerun()
 
         st.markdown("---")
-        st.markdown(t["user_label"] + ": " + display_name)
-        if is_logged_in:
-            if st.button(t["log_out"]):
-                st.logout()
-        else:
-            if st.button(t["log_out"]):
-                st.session_state.guest_mode = False
-                st.session_state.chats = {}
-                st.session_state.current_chat_id = None
-                st.rerun()
+        role_label = t["guest_label"] if not is_logged_in else "Student"
+        col_a, col_b = st.columns([5, 1])
+        with col_a:
+            st.markdown(
+                f"<div style='display:flex; align-items:center; gap:10px;'>"
+                f"<span style='display:flex; align-items:center; justify-content:center; width:34px; height:34px; "
+                f"border-radius:50%; background-color:rgba(61,191,226,0.15); font-size:16px;'>👤</span>"
+                f"<div><div style='font-size:13px; font-weight:500;'>{display_name}</div>"
+                f"<div style='font-size:11px; color:{MUTED_FG};'>{role_label}</div></div></div>",
+                unsafe_allow_html=True
+            )
+        with col_b:
+            if is_logged_in:
+                if st.button("↪", key="logout_btn"):
+                    st.logout()
+            else:
+                if st.button("↪", key="logout_btn"):
+                    st.session_state.guest_mode = False
+                    st.session_state.chats = {}
+                    st.session_state.current_chat_id = None
+                    st.rerun()
 
     # ---------- Main area ----------
     current_id = st.session_state.current_chat_id
