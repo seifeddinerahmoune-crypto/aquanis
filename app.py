@@ -42,6 +42,7 @@ TRANSLATIONS = {
         "create": "Create",
         "cancel": "Cancel",
         "recent_chats": "Recent chats",
+        "no_chats": "No conversations yet",
         "user_label": "User",
         "guest_label": "Guest",
         "log_out": "Log out",
@@ -71,6 +72,7 @@ TRANSLATIONS = {
         "create": "Créer",
         "cancel": "Annuler",
         "recent_chats": "Discussions récentes",
+        "no_chats": "Aucune conversation pour le moment",
         "user_label": "Utilisateur",
         "guest_label": "Invité",
         "log_out": "Se déconnecter",
@@ -100,6 +102,7 @@ TRANSLATIONS = {
         "create": "إنشاء",
         "cancel": "إلغاء",
         "recent_chats": "المحادثات الأخيرة",
+        "no_chats": "لا توجد محادثات بعد",
         "user_label": "المستخدم",
         "guest_label": "ضيف",
         "log_out": "تسجيل الخروج",
@@ -335,35 +338,25 @@ try:
     model, collection = load_resources()
 
     # ---------- Sidebar ----------
-    st.markdown("---")
-    st.markdown(
-            f"<p style='font-size:11px; letter-spacing:0.5px; color:{MUTED_FG}; text-transform:uppercase; margin-bottom:8px;'>{t['recent_chats']}</p>",
+    with st.sidebar:
+        st.markdown(
+            f"<div style='display:flex; align-items:center; gap:10px; padding:4px 0 12px;'>"
+            f"<span class='aquanis-logo'>💧</span>"
+            f"<div><div style='font-weight:600; font-size:17px;'>Aquanis</div>"
+            f"<div style='font-size:12px; color:{MUTED_FG};'>🌊 Hydraulics AI</div></div></div>",
             unsafe_allow_html=True
         )
+        lang_names = list(lang_options.keys())
+        current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
+        selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
+        selected_lang_code = lang_options[selected_lang_name]
+        if selected_lang_code != st.session_state.ui_lang:
+            st.session_state.ui_lang = selected_lang_code
+            st.rerun()
 
-        # Render "No conversations yet" if chats dictionary is empty
-        if not st.session_state.chats:
-            st.markdown(
-                f"<p style='font-size:13px; color:{MUTED_FG}; padding:4px 0;'>No conversations yet</p>",
-                unsafe_allow_html=True
-            )
-        else:
-            for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
-                label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
-                col1, col2 = st.columns([5, 1])
-                with col1:
-                    if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
-                        st.session_state.current_chat_id = chat_id
-                        st.rerun()
-                with col2:
-                    if st.button("🗑", key=f"del_{chat_id}"):
-                        del st.session_state.chats[chat_id]
-                        if st.session_state.current_chat_id == chat_id:
-                            remaining = list(st.session_state.chats.keys())
-                            st.session_state.current_chat_id = remaining[0] if remaining else None
-                        if is_logged_in:
-                            save_chats(user_identity, st.session_state.chats)
-                        st.rerun()
+        if st.button(t["new_chat"], use_container_width=True, type="primary"):
+            st.session_state.creating_new_chat = True
+            st.rerun()
 
         if st.session_state.creating_new_chat:
             new_name = st.text_input(t["chat_name_label"], placeholder=t["chat_name_placeholder"], key="new_chat_name")
@@ -391,22 +384,28 @@ try:
             unsafe_allow_html=True
         )
 
-        for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
-            label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
-                    st.session_state.current_chat_id = chat_id
-                    st.rerun()
-            with col2:
-                if st.button("🗑", key=f"del_{chat_id}"):
-                    del st.session_state.chats[chat_id]
-                    if st.session_state.current_chat_id == chat_id:
-                        remaining = list(st.session_state.chats.keys())
-                        st.session_state.current_chat_id = remaining[0] if remaining else None
-                    if is_logged_in:
-                        save_chats(user_identity, st.session_state.chats)
-                    st.rerun()
+        if not st.session_state.chats:
+            st.markdown(
+                f"<p style='font-size:13px; color:{MUTED_FG}; padding:4px 0;'>{t['no_chats']}</p>",
+                unsafe_allow_html=True
+            )
+        else:
+            for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
+                label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+                        st.session_state.current_chat_id = chat_id
+                        st.rerun()
+                with col2:
+                    if st.button("🗑", key=f"del_{chat_id}"):
+                        del st.session_state.chats[chat_id]
+                        if st.session_state.current_chat_id == chat_id:
+                            remaining = list(st.session_state.chats.keys())
+                            st.session_state.current_chat_id = remaining[0] if remaining else None
+                        if is_logged_in:
+                            save_chats(user_identity, st.session_state.chats)
+                        st.rerun()
 
         st.markdown("---")
         role_label = t["guest_label"] if not is_logged_in else "Student"
@@ -482,100 +481,4 @@ try:
             st.markdown(
                 f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
                 f"<div class='aquanis-assistant-bubble-inner'>{msg['content']}</div></div>",
-                unsafe_allow_html=True
-            )
-
-    prompt = st.chat_input(
-        t["chat_input_placeholder"],
-        accept_file=True,
-        file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls"]
-    )
-
-    pending = st.session_state.pop("pending_question", None)
-    if pending and not prompt:
-        class FakePrompt:
-            text = pending
-            def __getitem__(self, key):
-                return []
-        prompt = FakePrompt()
-
-    if prompt:
-        question = prompt.text if prompt.text else ""
-        uploaded_files = prompt["files"] if prompt["files"] else []
-
-        image_data_url = None
-        extra_text_context = ""
-
-        for f in uploaded_files:
-            file_bytes = f.read()
-            ext = f.name.split(".")[-1].lower()
-            if ext in ["png", "jpg", "jpeg"]:
-                base64_image = base64.b64encode(file_bytes).decode("utf-8")
-                image_data_url = "data:" + f.type + ";base64," + base64_image
-            elif ext == "pdf":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pdf(file_bytes)
-            elif ext == "pptx":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pptx(file_bytes)
-            elif ext == "docx":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_docx(file_bytes)
-            elif ext in ["xlsx", "xls"]:
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xlsx(file_bytes)
-
-        display_text = question if question else "(file attached)"
-        current_chat["messages"].append({"role": "user", "content": display_text})
-        st.markdown(
-            f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{display_text}</div></div>",
-            unsafe_allow_html=True
-        )
-
-        query_embedding = model.encode([display_text]).tolist()
-        results = collection.query(query_embeddings=query_embedding, n_results=4)
-        context = "\n\n".join(results["documents"][0])
-        sources = list(set(r["source"] for r in results["metadatas"][0]))
-
-        system_prompt = ("You are Aquanis, a helpful assistant for hydraulics engineers and students. "
-                          "Always answer in the same language the student used in their latest question. "
-                          "Use the course context below to answer questions. If an image or file is attached, "
-                          "analyze it and relate it to hydraulics concepts. If the answer is not available, "
-                          "say so in the student's language. Use earlier conversation for follow-up questions.\n\n"
-                          "Course context:\n" + context)
-
-        if extra_text_context:
-            system_prompt += "\n\nAttached file content:\n" + extra_text_context
-
-        conversation_messages = [{"role": "system", "content": system_prompt}]
-        num_messages = len(current_chat["messages"])
-        for i, msg in enumerate(current_chat["messages"]):
-            if i == num_messages - 1 and image_data_url:
-                conversation_messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": msg["content"]},
-                        {"type": "image_url", "image_url": {"url": image_data_url}}
-                    ]
-                })
-            else:
-                conversation_messages.append({"role": msg["role"], "content": msg["content"]})
-
-        model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"
-
-        with st.spinner(t["thinking"]):
-            response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
-            answer = response.choices[0].message.content + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
-
-        st.markdown(
-            f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
-            f"<div class='aquanis-assistant-bubble-inner'>{answer}</div></div>",
-            unsafe_allow_html=True
-        )
-
-        current_chat["messages"].append({"role": "assistant", "content": answer})
-        if is_logged_in:
-            save_chats(user_identity, st.session_state.chats)
-        st.rerun()
-
-    st.markdown(f"<p class='aquanis-footer-note'>{t['footer_note']}</p>", unsafe_allow_html=True)
-
-except Exception as e:
-    st.error("An error occurred while running Aquanis:")
-    st.code(traceback.format_exc())
+                unsafe_allow_html
