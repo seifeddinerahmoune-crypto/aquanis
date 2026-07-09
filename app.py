@@ -3,11 +3,16 @@ import os
 import json
 import uuid
 import base64
+import io
 from datetime import datetime
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 import chromadb
 from groq import Groq
+import fitz
+from pptx import Presentation
+from docx import Document
+import openpyxl
 
 st.set_page_config(page_title="Aquanis", page_icon="water", layout="wide")
 
@@ -29,12 +34,11 @@ TRANSLATIONS = {
         "guest_label": "Guest",
         "log_out": "Log out",
         "start_new_chat_caption": "Start a new chat to ask a question about your hydraulics course materials.",
-        "chat_input_placeholder": "Ask a question about hydraulics...",
+        "chat_input_placeholder": "Ask a question, or attach a file...",
         "thinking": "Thinking...",
         "sources_label": "Sources",
         "language_label": "Interface language",
         "delete": "Delete",
-        "upload_label": "Upload an image (diagram, problem sheet, etc.)",
     },
     "fr": {
         "app_name": "Aquanis",
@@ -53,12 +57,11 @@ TRANSLATIONS = {
         "guest_label": "Invité",
         "log_out": "Se déconnecter",
         "start_new_chat_caption": "Démarrez une nouvelle discussion pour poser une question sur vos cours d'hydraulique.",
-        "chat_input_placeholder": "Posez une question sur l'hydraulique...",
+        "chat_input_placeholder": "Posez une question, ou joignez un fichier...",
         "thinking": "Réflexion en cours...",
         "sources_label": "Sources",
         "language_label": "Langue de l'interface",
         "delete": "Supprimer",
-        "upload_label": "Téléverser une image (schéma, exercice, etc.)",
     },
     "ar": {
         "app_name": "Aquanis",
@@ -77,12 +80,11 @@ TRANSLATIONS = {
         "guest_label": "ضيف",
         "log_out": "تسجيل الخروج",
         "start_new_chat_caption": "ابدأ محادثة جديدة لطرح سؤال حول مواد مقرر الهيدروليك.",
-        "chat_input_placeholder": "اطرح سؤالا حول الهيدروليك...",
+        "chat_input_placeholder": "اطرح سؤالا، أو أرفق ملفا...",
         "thinking": "جارٍ التفكير...",
         "sources_label": "المصادر",
         "language_label": "لغة الواجهة",
         "delete": "حذف",
-        "upload_label": "قم بتحميل صورة (مخطط، ورقة تمرين، إلخ)",
     },
 }
 
@@ -99,6 +101,38 @@ if "guest_mode" not in st.session_state:
 
 if "guest_id" not in st.session_state:
     st.session_state.guest_id = "guest_" + str(uuid.uuid4())
+
+
+def extract_text_from_pdf(file_bytes):
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    return "\n".join(page.get_text() for page in doc)
+
+
+def extract_text_from_pptx(file_bytes):
+    prs = Presentation(io.BytesIO(file_bytes))
+    parts = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                parts.append(shape.text)
+    return "\n".join(parts)
+
+
+def extract_text_from_docx(file_bytes):
+    doc = Document(io.BytesIO(file_bytes))
+    return "\n".join(p.text for p in doc.paragraphs)
+
+
+def extract_text_from_xlsx(file_bytes):
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    parts = []
+    for sheet in wb.worksheets:
+        for row in sheet.iter_rows(values_only=True):
+            row_text = " | ".join(str(cell) for cell in row if cell is not None)
+            if row_text:
+                parts.append(row_text)
+    return "\n".join(parts)
+
 
 try:
     is_logged_in = st.user.is_logged_in
@@ -288,35 +322,62 @@ try:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    uploaded_image = st.file_uploader(
-        t["upload_label"],
-        type=["png", "jpg", "jpeg"],
-        key="image_uploader"
+    prompt = st.chat_input(
+        t["chat_input_placeholder"],
+        accept_file=True,
+        file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls"]
     )
 
-    question = st.chat_input(t["chat_input_placeholder"])
+    if prompt:
+        question = prompt.text if prompt.text else ""
+        uploaded_files = prompt["files"] if prompt["files"] else []
 
-    if question:
         image_data_url = None
-        if uploaded_image is not None:
-            image_bytes = uploaded_image.read()
-            base64_image = base64.b64encode(image_bytes).decode("utf-8")
-            mime_type = uploaded_image.type
-            image_data_url = "data:" + mime_type + ";base64," + base64_image
+        extra_text_context = ""
 
-        current_chat["messages"].append({"role": "user", "content": question})
+        for f in uploaded_files:
+            file_bytes = f.read()
+            ext = f.name.split(".")[-1].lower()
+
+            if ext in ["png", "jpg", "jpeg"]:
+                base64_image = base64.b64encode(file_bytes).decode("utf-8")
+                image_data_url = "data:" + f.type + ";base64," + base64_image
+            elif ext == "pdf":
+                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pdf(file_bytes)
+            elif ext == "pptx":
+                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pptx(file_bytes)
+            elif ext == "docx":
+                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_docx(file_bytes)
+            elif ext in ["xlsx", "xls"]:
+                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xlsx(file_bytes)
+
+        display_text = question if question else "(file attached)"
+        current_chat["messages"].append({"role": "user", "content": display_text})
 
         with st.chat_message("user"):
-            if uploaded_image is not None:
-                st.image(uploaded_image)
-            st.markdown(question)
+            for f in uploaded_files:
+                ext = f.name.split(".")[-1].lower()
+                if ext in ["png", "jpg", "jpeg"]:
+                    st.image(f)
+                else:
+                    st.markdown("📎 " + f.name)
+            if question:
+                st.markdown(question)
 
-        query_embedding = model.encode([question]).tolist()
+        query_embedding = model.encode([display_text]).tolist()
         results = collection.query(query_embeddings=query_embedding, n_results=4)
         context = "\n\n".join(results["documents"][0])
         sources = list(set(r["source"] for r in results["metadatas"][0]))
 
-        system_prompt = "You are Aquanis, a helpful assistant for hydraulics engineers and students. Always answer in the same language the student used in their latest question, whether that is English, French, Arabic, or any other language. Use the course context below to answer questions. If an image is provided, analyze it carefully and relate it to hydraulics concepts. If the answer is not in the context, say you do not have that information in your materials, in the student's language. Also use the earlier conversation to understand follow-up questions.\n\nContext:\n" + context
+        system_prompt = ("You are Aquanis, a helpful assistant for hydraulics engineers and students. "
+                          "Always answer in the same language the student used in their latest question. "
+                          "Use the course context below to answer questions. If an image or file is attached, "
+                          "analyze it and relate it to hydraulics concepts. If the answer is not available, "
+                          "say so in the student's language. Use earlier conversation for follow-up questions.\n\n"
+                          "Course context:\n" + context)
+
+        if extra_text_context:
+            system_prompt += "\n\nAttached file content:\n" + extra_text_context
 
         conversation_messages = [{"role": "system", "content": system_prompt}]
 
