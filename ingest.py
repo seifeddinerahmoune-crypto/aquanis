@@ -9,9 +9,17 @@ import fitz
 from pptx import Presentation
 from docx import Document
 import openpyxl
+from PIL import Image
+import pytesseract
 
 DATA_FOLDER = "data"
 CHROMA_PATH = "chroma_db"
+
+# Configure Tesseract path (Windows users - update this if Tesseract is in a different location)
+try:
+    pytesseract.pytesseract.pytesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+except:
+    pass
 
 print("Loading embedding model...")
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -91,6 +99,18 @@ def read_rtf(path):
     text = re.sub(r'[{}]', '', text)
     return text
 
+def read_image(path):
+    """Extract text from images using OCR"""
+    try:
+        img = Image.open(path)
+        text = pytesseract.image_to_string(img)
+        if text.strip():
+            return f"[Image: {os.path.basename(path)}]\n{text}"
+        else:
+            return f"[Image: {os.path.basename(path)}]\n(No readable text detected in this image)"
+    except Exception as e:
+        return f"[Image: {os.path.basename(path)}]\n(Could not process image: {str(e)})"
+
 # Process all files
 all_chunks = []
 all_ids = []
@@ -121,6 +141,8 @@ for filename in os.listdir(DATA_FOLDER):
             text = read_xml(filepath)
         elif ext == "rtf":
             text = read_rtf(filepath)
+        elif ext in ["png", "jpg", "jpeg", "bmp", "gif", "tiff"]:
+            text = read_image(filepath)
         else:
             print(f"  Skipping {filename} - unsupported format")
             continue
@@ -148,4 +170,4 @@ collection.add(
 
 print("✅ Done! Aquanis has learned from your documents.")
 print(f"Total chunks ingested: {len(all_chunks)}")
-print(f"File types: PDF, PPTX, DOCX, XLSX/XLS, CSV, TXT, JSON, XML, RTF")
+print(f"File types: PDF, PPTX, DOCX, XLSX/XLS, CSV, TXT, JSON, XML, RTF, PNG, JPG, JPEG, BMP, GIF, TIFF")
