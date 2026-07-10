@@ -527,7 +527,11 @@ try:
                           "Always answer in the same language the student used in their latest question. "
                           "Use the course context below to answer questions. If an image or file is attached, "
                           "analyze it and relate it to hydraulics concepts. If the answer is not available, "
-                          "say so in the student's language. Use earlier conversation for follow-up questions.\n\n"
+                          "say so in the student's language. Use earlier conversation for follow-up questions. "
+                          "IMPORTANT: Always write mathematical equations and formulas using LaTeX syntax. "
+                          "Use single dollar signs for inline math, like $u^2$ or $\\rho$, and double dollar "
+                          "signs on their own line for standalone equations, like $$\\frac{dp}{dx} = -\\frac{f \\rho u^2}{2D}$$. "
+                          "Never write equations as plain text with asterisks or carets.\n\n"
                           "Course context:\n" + context)
 
         if extra_text_context:
