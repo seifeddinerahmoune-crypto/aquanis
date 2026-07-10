@@ -1,3 +1,4 @@
+import replicate
 import traceback
 import os
 import json
@@ -261,7 +262,23 @@ def extract_text_from_xlsx(file_bytes):
             if row_text:
                 parts.append(row_text)
     return "\n".join(parts)
-
+# ---------- Image generation function ----------
+def generate_diagram(prompt):
+    """Generate a diagram using Stable Diffusion via Replicate"""
+    try:
+        output = replicate_client.run(
+            "stability-ai/sdxl:39ed52f2a60c3b36b4e8c8cb03d33ec2e7925ea2b3b9a44cc27a992cb5d52e27",
+            input={
+                "prompt": prompt + " technical diagram, engineering drawing, clear labels, professional",
+                "num_inference_steps": 25,
+                "guidance_scale": 7.5,
+            }
+        )
+        if output and len(output) > 0:
+            return output[0]
+    except Exception as e:
+        print(f"Image generation error: {e}")
+    return None
 
 def extract_text_from_csv(file_bytes):
     text_lines = []
@@ -329,6 +346,7 @@ try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     CHROMA_PATH = "chroma_db"
     CHATS_FILE = "chats.json"
+    replicate_client = replicate.Client(api_token=st.secrets.get("REPLICATE_API_KEY"))
 
     def load_all_chats():
         if os.path.exists(CHATS_FILE):
@@ -579,6 +597,8 @@ try:
                           "Use the course context below to answer questions. If an image or file is attached, "
                           "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
                           "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
+                          "When a student asks you to draw, sketch, diagram, or visualize something related to hydraulics, "
+                          "respond with: [GENERATE_IMAGE: description of what to draw]. "
                           "If the answer is not available, say so in the student's language. Use earlier conversation for follow-ups.\n\n"
                           "Course context:\n" + context)
 
@@ -603,13 +623,53 @@ try:
 
         with st.spinner(t["thinking"]):
             response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
-            answer = response.choices[0].message.content + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+            answer = response.choices[0].message.content
 
-        st.markdown(
-            f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
-            f"<div class='aquanis-assistant-bubble-inner'>{answer}</div></div>",
-            unsafe_allow_html=True
-        )
+        # Check if the response asks to generate an image
+        if "[GENERATE_IMAGE:" in answer:
+            parts = answer.split("[GENERATE_IMAGE:")
+            text_part = parts[0].strip()
+            image_prompt_part = parts[1].split("]")[0].strip() if len(parts) > 1 else ""
+            remaining_text = parts[1].split("]", 1)[1].strip() if len(parts) > 1 and "]" in parts[1] else ""
+
+            # Display text
+            if text_part:
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{text_part}</div></div>",
+                    unsafe_allow_html=True
+                )
+
+            # Generate and display image
+            if image_prompt_part:
+                with st.spinner("🎨 Generating diagram..."):
+                    image_url = generate_diagram(image_prompt_part)
+                    if image_url:
+                        st.image(image_url, caption=image_prompt_part, use_container_width=True)
+
+            # Display remaining text
+            if remaining_text:
+                final_answer = remaining_text + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{final_answer}</div></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{t['sources_label']}: {', '.join(sources)}</div></div>",
+                    unsafe_allow_html=True
+                )
+
+            answer = text_part + "\n[Diagram generated]" + remaining_text
+        else:
+            answer = answer + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+            st.markdown(
+                f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                f"<div class='aquanis-assistant-bubble-inner'>{answer}</div></div>",
+                unsafe_allow_html=True
+            )
 
         current_chat["messages"].append({"role": "assistant", "content": answer})
         if is_logged_in:
