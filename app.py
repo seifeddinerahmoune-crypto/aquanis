@@ -4,6 +4,8 @@ import json
 import uuid
 import base64
 import io
+import csv
+import xml.etree.ElementTree as ET
 from datetime import datetime
 import streamlit as st
 from sentence_transformers import SentenceTransformer
@@ -119,12 +121,6 @@ TRANSLATIONS = {
     },
 }
 
-lang_options = {
-    "English": "en",
-    "Français": "fr",
-    "العربية": "ar"
-}
-
 if "ui_lang" not in st.session_state:
     st.session_state.ui_lang = "en"
 
@@ -235,6 +231,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
+# ---------- File extraction functions ----------
 def extract_text_from_pdf(file_bytes):
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     return "\n".join(page.get_text() for page in doc)
@@ -264,6 +261,44 @@ def extract_text_from_xlsx(file_bytes):
             if row_text:
                 parts.append(row_text)
     return "\n".join(parts)
+
+
+def extract_text_from_csv(file_bytes):
+    text_lines = []
+    try:
+        for row in csv.reader(file_bytes.decode('utf-8').splitlines()):
+            text_lines.append(" | ".join(row))
+    except:
+        text_lines.append(file_bytes.decode('utf-8'))
+    return "\n".join(text_lines)
+
+
+def extract_text_from_txt(file_bytes):
+    return file_bytes.decode('utf-8', errors='ignore')
+
+
+def extract_text_from_json(file_bytes):
+    try:
+        data = json.loads(file_bytes.decode('utf-8'))
+        return json.dumps(data, indent=2)
+    except:
+        return file_bytes.decode('utf-8', errors='ignore')
+
+
+def extract_text_from_xml(file_bytes):
+    try:
+        root = ET.fromstring(file_bytes)
+        return ET.tostring(root, encoding='unicode')
+    except:
+        return file_bytes.decode('utf-8', errors='ignore')
+
+
+def extract_text_from_rtf(file_bytes):
+    text = file_bytes.decode('utf-8', errors='ignore')
+    import re
+    text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+    text = re.sub(r'[{}]', '', text)
+    return text
 
 
 try:
@@ -343,6 +378,8 @@ try:
             f"<div style='font-size:12px; color:{MUTED_FG};'>🌊 Hydraulics AI</div></div></div>",
             unsafe_allow_html=True
         )
+
+        lang_options = {"English": "en", "Français": "fr", "العربية": "ar"}
         lang_names = list(lang_options.keys())
         current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
         selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
@@ -389,7 +426,7 @@ try:
                     st.session_state.current_chat_id = chat_id
                     st.rerun()
             with col2:
-                if st.button("🗑", key=f"del_{chat_id}"):
+                if st.button("\U0001F5D1", key=f"del_{chat_id}"):
                     del st.session_state.chats[chat_id]
                     if st.session_state.current_chat_id == chat_id:
                         remaining = list(st.session_state.chats.keys())
@@ -478,7 +515,7 @@ try:
     prompt = st.chat_input(
         t["chat_input_placeholder"],
         accept_file=True,
-        file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls"]
+        file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls", "csv", "txt", "json", "xml", "rtf"]
     )
 
     pending = st.session_state.pop("pending_question", None)
@@ -499,17 +536,31 @@ try:
         for f in uploaded_files:
             file_bytes = f.read()
             ext = f.name.split(".")[-1].lower()
-            if ext in ["png", "jpg", "jpeg"]:
-                base64_image = base64.b64encode(file_bytes).decode("utf-8")
-                image_data_url = "data:" + f.type + ";base64," + base64_image
-            elif ext == "pdf":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pdf(file_bytes)
-            elif ext == "pptx":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pptx(file_bytes)
-            elif ext == "docx":
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_docx(file_bytes)
-            elif ext in ["xlsx", "xls"]:
-                extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xlsx(file_bytes)
+
+            try:
+                if ext in ["png", "jpg", "jpeg"]:
+                    base64_image = base64.b64encode(file_bytes).decode("utf-8")
+                    image_data_url = "data:" + f.type + ";base64," + base64_image
+                elif ext == "pdf":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pdf(file_bytes)
+                elif ext == "pptx":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pptx(file_bytes)
+                elif ext == "docx":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_docx(file_bytes)
+                elif ext in ["xlsx", "xls"]:
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xlsx(file_bytes)
+                elif ext == "csv":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_csv(file_bytes)
+                elif ext == "txt":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_txt(file_bytes)
+                elif ext == "json":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_json(file_bytes)
+                elif ext == "xml":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xml(file_bytes)
+                elif ext == "rtf":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_rtf(file_bytes)
+            except Exception as e:
+                extra_text_context += f"\n\n[Could not extract content from {f.name}: {str(e)}]"
 
         display_text = question if question else "(file attached)"
         current_chat["messages"].append({"role": "user", "content": display_text})
@@ -526,12 +577,9 @@ try:
         system_prompt = ("You are Aquanis, a helpful assistant for hydraulics engineers and students. "
                           "Always answer in the same language the student used in their latest question. "
                           "Use the course context below to answer questions. If an image or file is attached, "
-                          "analyze it and relate it to hydraulics concepts. If the answer is not available, "
-                          "say so in the student's language. Use earlier conversation for follow-up questions. "
-                          "IMPORTANT: Always write mathematical equations and formulas using LaTeX syntax. "
-                          "Use single dollar signs for inline math, like $u^2$ or $\\rho$, and double dollar "
-                          "signs on their own line for standalone equations, like $$\\frac{dp}{dx} = -\\frac{f \\rho u^2}{2D}$$. "
-                          "Never write equations as plain text with asterisks or carets.\n\n"
+                          "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
+                          "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
+                          "If the answer is not available, say so in the student's language. Use earlier conversation for follow-ups.\n\n"
                           "Course context:\n" + context)
 
         if extra_text_context:
