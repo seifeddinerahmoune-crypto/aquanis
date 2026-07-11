@@ -140,3 +140,5 @@ websocket-client==1.9.0
 websockets==16.0
 xlsxwriter==3.2.9
 yarl==1.24.2
+torchvision==0.17.1
+torch
