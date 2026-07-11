@@ -265,20 +265,22 @@ def extract_text_from_xlsx(file_bytes):
 # ---------- Image generation function ----------
 def generate_diagram(prompt):
     """Generate a diagram using Stable Diffusion via Replicate"""
+    import replicate as rep
     try:
-        output = replicate_client.run(
+        output = rep.run(
             "stability-ai/sdxl:39ed52f2a60c3b36b4e8c8cb03d33ec2e7925ea2b3b9a44cc27a992cb5d52e27",
             input={
-                "prompt": prompt + " technical diagram, engineering drawing, clear labels, professional",
-                "num_inference_steps": 25,
-                "guidance_scale": 7.5,
+                "prompt": prompt + " technical diagram professional",
+                "num_inference_steps": 20,
+                "guidance_scale": 7.5
             }
         )
         if output and len(output) > 0:
             return output[0]
+        return None
     except Exception as e:
-        print(f"Image generation error: {e}")
-    return None
+        print(f"Replicate error: {e}")
+        return None
 
 def extract_text_from_csv(file_bytes):
     text_lines = []
