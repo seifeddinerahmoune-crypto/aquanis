@@ -12,6 +12,8 @@ import streamlit as st
 from sentence_transformers import SentenceTransformer
 import chromadb
 from groq import Groq
+from google import genai
+from google.genai import types
 import fitz
 from pptx import Presentation
 from docx import Document
