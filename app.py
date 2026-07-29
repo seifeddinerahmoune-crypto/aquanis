@@ -622,7 +622,12 @@ try:
             else:
                 conversation_messages.append({"role": msg["role"], "content": msg["content"]})
 
-        model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"
+        conversation_messages.append({
+            "role": "system",
+            "content": "Reminder: respond in the same language as this message only: " + question
+        })
+
+        model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"ile"
 
         with st.spinner(t["thinking"]):
             response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
