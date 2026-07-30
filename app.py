@@ -584,6 +584,8 @@ try:
                 f"<div class='aquanis-assistant-bubble-inner'>{msg['content']}</div></div>",
                 unsafe_allow_html=True
             )
+            if msg.get("image"):
+                st.image(msg["image"], use_container_width=True)
 
     input_col, provider_col = st.columns([6, 1])
 
@@ -606,6 +608,7 @@ try:
     if pending and not prompt:
         prompt = FakePrompt(pending)
 
+    assistant_image_data_url = None
     if prompt:
         question = prompt.text if prompt.text else ""
         uploaded_files = prompt.files if prompt.files else []
@@ -736,11 +739,14 @@ try:
                 )
 
             # Generate and display image via Pollinations (FREE, no key)
+            assistant_image_data_url = None
             if image_prompt_part:
                 with st.spinner("🎨 Generating image..."):
                     image_bytes = generate_image(image_prompt_part)
                     if image_bytes:
-                        st.image(image_bytes, caption=image_prompt_part, use_container_width=True)
+                        # Convert bytes to base64 data URL so it persists in chat history
+                        assistant_image_data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("utf-8")
+                        st.image(assistant_image_data_url, caption=image_prompt_part, use_container_width=True)
                     else:
                         st.warning("Could not generate image. The image service may be busy — please try again.")
 
@@ -759,7 +765,7 @@ try:
                     unsafe_allow_html=True
                 )
 
-            answer = text_part + "\n[Image generated]" + remaining_text
+            answer = text_part + ("\n\n" if text_part and remaining_text else "") + remaining_text
         else:
             answer = answer + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
             st.markdown(
@@ -768,7 +774,10 @@ try:
                 unsafe_allow_html=True
             )
 
-        current_chat["messages"].append({"role": "assistant", "content": answer})
+        assistant_msg = {"role": "assistant", "content": answer}
+        if assistant_image_data_url:
+            assistant_msg["image"] = assistant_image_data_url
+        current_chat["messages"].append(assistant_msg)
         if is_logged_in:
             save_chats(user_identity, st.session_state.chats)
         st.rerun()
