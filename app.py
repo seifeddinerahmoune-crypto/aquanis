@@ -266,12 +266,13 @@ def extract_text_from_xlsx(file_bytes):
             if row_text:
                 parts.append(row_text)
     return "\n".join(parts)
+
+
 # ---------- Image generation function ----------
 def generate_diagram(prompt):
     """Generate a diagram using Stable Diffusion via Replicate"""
-    import replicate as rep
     try:
-        output = rep.run(
+        output = replicate.run(
             "stability-ai/sdxl:39ed52f2a60c3b36b4e8c8cb03d33ec2e7925ea2b3b9a44cc27a992cb5d52e27",
             input={
                 "prompt": prompt + " technical diagram professional",
@@ -286,43 +287,59 @@ def generate_diagram(prompt):
         print(f"Replicate error: {e}")
         return None
 
+
 def extract_text_from_csv(file_bytes):
     text_lines = []
+    decoded = None
+    for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+        try:
+            decoded = file_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        decoded = file_bytes.decode("utf-8", errors="ignore")
     try:
-        for row in csv.reader(file_bytes.decode('utf-8').splitlines()):
+        for row in csv.reader(decoded.splitlines()):
             text_lines.append(" | ".join(row))
-    except:
-        text_lines.append(file_bytes.decode('utf-8'))
+    except Exception:
+        text_lines.append(decoded)
     return "\n".join(text_lines)
 
 
 def extract_text_from_txt(file_bytes):
-    return file_bytes.decode('utf-8', errors='ignore')
+    for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+        try:
+            return file_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return file_bytes.decode("utf-8", errors="ignore")
 
 
 def extract_text_from_json(file_bytes):
     try:
-        data = json.loads(file_bytes.decode('utf-8'))
+        data = json.loads(file_bytes.decode("utf-8"))
         return json.dumps(data, indent=2)
-    except:
-        return file_bytes.decode('utf-8', errors='ignore')
+    except Exception:
+        return extract_text_from_txt(file_bytes)
 
 
 def extract_text_from_xml(file_bytes):
     try:
         root = ET.fromstring(file_bytes)
-        return ET.tostring(root, encoding='unicode')
-    except:
-        return file_bytes.decode('utf-8', errors='ignore')
+        return ET.tostring(root, encoding="unicode")
+    except Exception:
+        return extract_text_from_txt(file_bytes)
 
 
 def extract_text_from_rtf(file_bytes):
-    text = file_bytes.decode('utf-8', errors='ignore')
+    text = extract_text_from_txt(file_bytes)
     import re
-    text = re.sub(r'\\[a-z]+\d*\s?', '', text)
-    text = re.sub(r'[{}]', '', text)
+    text = re.sub(r"\\[a-z]+\d*\s?", "", text)
+    text = re.sub(r"[{}]", "", text)
     return text
-    
+
+
 def call_gemini(system_prompt, conversation_messages, api_key):
     client = genai.Client(api_key=api_key)
     contents = []
@@ -337,11 +354,19 @@ def call_gemini(system_prompt, conversation_messages, api_key):
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model="gemini-1.5-flash",
         contents=contents,
         config=types.GenerateContentConfig(system_instruction=system_prompt)
     )
     return response.text
+
+
+class FakePrompt:
+    """Mimics a st.chat_input return object for pending questions."""
+    def __init__(self, text):
+        self.text = text
+        self.files = []
+
 
 try:
     is_logged_in = st.user.is_logged_in
@@ -371,7 +396,6 @@ try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     CHROMA_PATH = "chroma_db"
     CHATS_FILE = "chats.json"
-    replicate_client = replicate.Client(api_token=st.secrets.get("REPLICATE_API_KEY"))
 
     def load_all_chats():
         if os.path.exists(CHATS_FILE):
@@ -407,7 +431,7 @@ try:
     def load_resources():
         model = SentenceTransformer("all-MiniLM-L6-v2")
         client = chromadb.PersistentClient(path=CHROMA_PATH)
-        collection = client.get_collection("aquanis_docs")
+        collection = client.get_or_create_collection("aquanis_docs")
         return model, collection
 
     model, collection = load_resources()
@@ -495,7 +519,7 @@ try:
                 if st.button("↪", key="logout_btn"):
                     st.logout()
             else:
-                if st.button("↪", key="logout_btn"):
+                if st.button("↪", key="logout_btn_guest"):
                     st.session_state.guest_mode = False
                     st.session_state.chats = {}
                     st.session_state.current_chat_id = None
@@ -548,6 +572,8 @@ try:
                 f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{msg['content']}</div></div>",
                 unsafe_allow_html=True
             )
+            if msg.get("image"):
+                st.image(msg["image"], width=300)
         else:
             st.markdown(
                 f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
@@ -574,15 +600,11 @@ try:
 
     pending = st.session_state.pop("pending_question", None)
     if pending and not prompt:
-        class FakePrompt:
-            text = pending
-            def __getitem__(self, key):
-                return []
-        prompt = FakePrompt()
+        prompt = FakePrompt(pending)
 
     if prompt:
         question = prompt.text if prompt.text else ""
-        uploaded_files = prompt["files"] if prompt["files"] else []
+        uploaded_files = prompt.files if prompt.files else []
 
         image_data_url = None
         extra_text_context = ""
@@ -617,31 +639,44 @@ try:
                 extra_text_context += f"\n\n[Could not extract content from {f.name}: {str(e)}]"
 
         display_text = question if question else "(file attached)"
-        current_chat["messages"].append({"role": "user", "content": display_text})
+        user_msg = {"role": "user", "content": display_text}
+        if image_data_url:
+            user_msg["image"] = image_data_url
+        current_chat["messages"].append(user_msg)
         st.markdown(
             f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{display_text}</div></div>",
             unsafe_allow_html=True
         )
+        if image_data_url:
+            st.image(image_data_url, width=300)
 
         query_embedding = model.encode([display_text]).tolist()
         results = collection.query(query_embeddings=query_embedding, n_results=4)
-        context = "\n\n".join(results["documents"][0])
-        sources = list(set(r["source"] for r in results["metadatas"][0]))
 
-        system_prompt = ("You are Aquanis, a helpful assistant for hydraulics engineers and students. "
-                          "CRITICAL LANGUAGE RULE: Detect the language of ONLY the most recent user message (ignore the language "
-                          "of earlier messages in the conversation). Respond ENTIRELY in that same language, whether it is English, "
-                          "French, Arabic, or any other language. Do not mix languages or switch languages mid-response. "
-                          "Use the course context below to answer questions. If an image or file is attached, "
-                          "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
-                          "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
-                          "If the answer is not available, say so in the same language as the latest question. "
-                          "Use earlier conversation only for context/meaning, not for language choice.\n\n"
-                          "Course context:\n" + context)
+        if results and results.get("documents") and results["documents"][0]:
+            context = "\n\n".join(results["documents"][0])
+            sources = list(set(r["source"] for r in results["metadatas"][0]))
+        else:
+            context = "No course documents found in the knowledge base."
+            sources = []
+
+        system_prompt = (
+            "You are Aquanis, a helpful assistant for hydraulics engineers and students. "
+            "CRITICAL LANGUAGE RULE: Detect the language of ONLY the most recent user message (ignore the language "
+            "of earlier messages in the conversation). Respond ENTIRELY in that same language, whether it is English, "
+            "French, Arabic, or any other language. Do not mix languages or switch languages mid-response. "
+            "Use the course context below to answer questions. If an image or file is attached, "
+            "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
+            "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
+            "If the answer is not available, say so in the same language as the latest question. "
+            "Use earlier conversation only for context/meaning, not for language choice.\n\n"
+            "Course context:\n" + context
+        )
 
         if extra_text_context:
             system_prompt += "\n\nAttached file content:\n" + extra_text_context
 
+        # Build conversation for API
         conversation_messages = [{"role": "system", "content": system_prompt}]
         num_messages = len(current_chat["messages"])
         for i, msg in enumerate(current_chat["messages"]):
@@ -656,8 +691,9 @@ try:
             else:
                 conversation_messages.append({"role": msg["role"], "content": msg["content"]})
 
+        # Language reminder integrated into user message instead of a second system message
         conversation_messages.append({
-            "role": "system",
+            "role": "user",
             "content": "Reminder: respond in the same language as this message only: " + question
         })
 
@@ -679,7 +715,7 @@ try:
         if "[GENERATE_IMAGE:" in answer:
             parts = answer.split("[GENERATE_IMAGE:")
             text_part = parts[0].strip()
-            image_prompt_part = parts[1].split("]")[0].strip() if len(parts) > 1 else ""
+            image_prompt_part = parts[1].split("]", 1)[0].strip() if len(parts) > 1 else ""
             remaining_text = parts[1].split("]", 1)[1].strip() if len(parts) > 1 and "]" in parts[1] else ""
 
             # Display text
