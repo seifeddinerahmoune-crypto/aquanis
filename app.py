@@ -357,12 +357,23 @@ def call_gemini(system_prompt, conversation_messages, api_key):
         else:
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
-    response = client.models.generate_content(
-        model="gemini-1.5-flash",
-        contents=contents,
-        config=types.GenerateContentConfig(system_instruction=system_prompt)
-    )
-    return response.text
+    # Try models in order: newest first, then fall back to older ones
+    models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"]
+    last_error = None
+
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=system_prompt)
+            )
+            return response.text
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise last_error
 
 
 class FakePrompt:
