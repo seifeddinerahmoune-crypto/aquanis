@@ -134,6 +134,8 @@ if "guest_mode" not in st.session_state:
     st.session_state.guest_mode = False
 if "guest_id" not in st.session_state:
     st.session_state.guest_id = "guest_" + str(uuid.uuid4())
+if "ai_provider" not in st.session_state:
+    st.session_state.ai_provider = "Groq"
 
 # ---------- Global theme CSS ----------
 st.markdown(f"""
