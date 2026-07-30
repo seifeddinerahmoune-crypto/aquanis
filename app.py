@@ -555,11 +555,22 @@ try:
                 unsafe_allow_html=True
             )
 
-    prompt = st.chat_input(
-        t["chat_input_placeholder"],
-        accept_file=True,
-        file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls", "csv", "txt", "json", "xml", "rtf"]
-    )
+    input_col, provider_col = st.columns([6, 1])
+
+    with input_col:
+        prompt = st.chat_input(
+            t["chat_input_placeholder"],
+            accept_file=True,
+            file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls", "csv", "txt", "json", "xml", "rtf"]
+        )
+
+    with provider_col:
+        st.session_state.ai_provider = st.selectbox(
+            "AI",
+            ["Groq", "Gemini"],
+            index=["Groq", "Gemini"].index(st.session_state.ai_provider),
+            label_visibility="collapsed"
+        )
 
     pending = st.session_state.pop("pending_question", None)
     if pending and not prompt:
