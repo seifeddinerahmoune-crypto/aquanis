@@ -664,8 +664,16 @@ try:
         model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "llama-3.3-70b-versatile"
 
         with st.spinner(t["thinking"]):
-            response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
-            answer = response.choices[0].message.content
+            if st.session_state.ai_provider == "Gemini" and not image_data_url:
+                try:
+                    answer = call_gemini(system_prompt, conversation_messages, st.secrets.get("GEMINI_API_KEY"))
+                except Exception as e:
+                    st.warning("Gemini failed, falling back to Groq: " + str(e))
+                    response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
+                    answer = response.choices[0].message.content
+            else:
+                response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
+                answer = response.choices[0].message.content
 
         # Check if the response asks to generate an image
         if "[GENERATE_IMAGE:" in answer:
