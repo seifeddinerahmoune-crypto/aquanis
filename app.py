@@ -320,7 +320,26 @@ def extract_text_from_rtf(file_bytes):
     text = re.sub(r'\\[a-z]+\d*\s?', '', text)
     text = re.sub(r'[{}]', '', text)
     return text
+    
+def call_gemini(system_prompt, conversation_messages, api_key):
+    client = genai.Client(api_key=api_key)
+    contents = []
+    for msg in conversation_messages:
+        if msg["role"] == "system":
+            continue
+        role = "model" if msg["role"] == "assistant" else "user"
+        if isinstance(msg["content"], list):
+            text_part = next((c["text"] for c in msg["content"] if c.get("type") == "text"), "")
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text_part)]))
+        else:
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=contents,
+        config=types.GenerateContentConfig(system_instruction=system_prompt)
+    )
+    return response.text
 
 try:
     is_logged_in = st.user.is_logged_in
