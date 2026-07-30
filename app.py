@@ -1,4 +1,3 @@
-import replicate
 import traceback
 import os
 import json
@@ -7,6 +6,8 @@ import base64
 import io
 import csv
 import xml.etree.ElementTree as ET
+import urllib.request
+import urllib.parse
 from datetime import datetime
 import streamlit as st
 from sentence_transformers import SentenceTransformer
@@ -267,25 +268,28 @@ def extract_text_from_xlsx(file_bytes):
                 parts.append(row_text)
     return "\n".join(parts)
 
-
-# ---------- Image generation function ----------
-def generate_diagram(prompt):
-    """Generate a diagram using Stable Diffusion via Replicate"""
+# ---------- FREE Image generation via Pollinations.ai ----------
+def generate_image(prompt, width=1024, height=768, seed=None):
+    """
+    Generate any image (photos, diagrams, illustrations) via Pollinations.ai.
+    Completely free. No API key. No account. No credit card.
+    Uses the Flux model by default.
+    """
+    encoded = urllib.parse.quote(prompt)
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width={width}&height={height}&nologo=true&enhance=true"
+    )
+    if seed is not None:
+        url += f"&seed={seed}"
     try:
-        output = replicate.run(
-            "stability-ai/sdxl:39ed52f2a60c3b36b4e8c8cb03d33ec2e7925ea2b3b9a44cc27a992cb5d52e27",
-            input={
-                "prompt": prompt + " technical diagram professional",
-                "num_inference_steps": 20,
-                "guidance_scale": 7.5
-            }
-        )
-        if output and len(output) > 0:
-            return output[0]
-        return None
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as response:
+            if response.status == 200:
+                return response.read()  # raw image bytes
     except Exception as e:
-        print(f"Replicate error: {e}")
-        return None
+        print(f"Pollinations error: {e}")
+    return None
 
 
 def extract_text_from_csv(file_bytes):
@@ -367,7 +371,6 @@ class FakePrompt:
         self.text = text
         self.files = []
 
-
 try:
     is_logged_in = st.user.is_logged_in
 
@@ -396,6 +399,7 @@ try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     CHROMA_PATH = "chroma_db"
     CHATS_FILE = "chats.json"
+    # NOTE: No Replicate client needed — Pollinations is free and keyless.
 
     def load_all_chats():
         if os.path.exists(CHATS_FILE):
@@ -670,6 +674,11 @@ try:
             "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
             "If the answer is not available, say so in the same language as the latest question. "
             "Use earlier conversation only for context/meaning, not for language choice.\n\n"
+            "When the user asks for a visual, photo, diagram, illustration, or any image, "
+            "include the tag [GENERATE_IMAGE:your detailed image prompt here] in your response. "
+            "The prompt inside the tag should be in English and as descriptive as possible. "
+            "You can generate ANY type of image — technical diagrams, 3D renders, photos, sketches, "
+            "infographics, flow charts, or conceptual art — not just diagrams.\n\n"
             "Course context:\n" + context
         )
 
@@ -718,7 +727,7 @@ try:
             image_prompt_part = parts[1].split("]", 1)[0].strip() if len(parts) > 1 else ""
             remaining_text = parts[1].split("]", 1)[1].strip() if len(parts) > 1 and "]" in parts[1] else ""
 
-            # Display text
+            # Display text before image
             if text_part:
                 st.markdown(
                     f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
@@ -726,14 +735,16 @@ try:
                     unsafe_allow_html=True
                 )
 
-            # Generate and display image
+            # Generate and display image via Pollinations (FREE, no key)
             if image_prompt_part:
-                with st.spinner("🎨 Generating diagram..."):
-                    image_url = generate_diagram(image_prompt_part)
-                    if image_url:
-                        st.image(image_url, caption=image_prompt_part, use_container_width=True)
+                with st.spinner("🎨 Generating image..."):
+                    image_bytes = generate_image(image_prompt_part)
+                    if image_bytes:
+                        st.image(image_bytes, caption=image_prompt_part, use_container_width=True)
+                    else:
+                        st.warning("Could not generate image. The image service may be busy — please try again.")
 
-            # Display remaining text
+            # Display remaining text after image
             if remaining_text:
                 final_answer = remaining_text + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
                 st.markdown(
@@ -748,7 +759,7 @@ try:
                     unsafe_allow_html=True
                 )
 
-            answer = text_part + "\n[Diagram generated]" + remaining_text
+            answer = text_part + "\n[Image generated]" + remaining_text
         else:
             answer = answer + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
             st.markdown(
