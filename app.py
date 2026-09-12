@@ -722,19 +722,73 @@ try:
             "content": "Reminder: respond in the same language as this message only: " + question
         })
 
-        model_to_use = "llama-3.2-11b-vision-preview" if image_data_url else "openai/gpt-oss-120b"
+        # ------------------------------------------------------------------
+        # Robust model fallback — Groq deprecates models often.
+        # We try multiple models in priority order so the app never dies.
+        # ------------------------------------------------------------------
+        GROQ_TEXT_MODELS = [
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.6-27b",
+            "openai/gpt-oss-20b",
+            "llama-3.1-8b-instant",
+        ]
+        GROQ_VISION_MODELS = [
+            "llama-3.2-11b-vision-preview",
+            "llama-3.2-90b-vision-preview",
+        ]
+
+        def try_groq_models(models, messages):
+            """Try each model until one works. Returns (answer, model_used)."""
+            last_err = None
+            for m in models:
+                try:
+                    resp = groq_client.chat.completions.create(model=m, messages=messages)
+                    return resp.choices[0].message.content, m
+                except Exception as e:
+                    last_err = e
+                    err_msg = str(e).lower()
+                    if "not found" in err_msg or "does not exist" in err_msg or "deprecated" in err_msg:
+                        continue  # Try next model
+                    raise  # Real error, stop
+            raise last_err
 
         with st.spinner(t["thinking"]):
+            answer = None
+            model_used = None
+
+            # 1) Try Gemini first if selected and no image
             if st.session_state.ai_provider == "Gemini" and not image_data_url:
                 try:
                     answer = call_gemini(system_prompt, conversation_messages, st.secrets.get("GEMINI_API_KEY"))
+                    model_used = "gemini-2.0-flash"
                 except Exception as e:
                     st.warning("Gemini failed, falling back to Groq: " + str(e))
-                    response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
-                    answer = response.choices[0].message.content
-            else:
-                response = groq_client.chat.completions.create(model=model_to_use, messages=conversation_messages)
-                answer = response.choices[0].message.content
+                    answer = None
+
+            # 2) Groq with cascading fallback
+            if answer is None:
+                try:
+                    if image_data_url:
+                        # Try vision models first, then fall back to text-only
+                        try:
+                            answer, model_used = try_groq_models(GROQ_VISION_MODELS, conversation_messages)
+                        except Exception:
+                            # Vision models all dead — strip image and use text model
+                            st.warning("Vision models unavailable. Analyzing image description with text model...")
+                            # Rebuild messages without the image_url payload
+                            text_only_messages = [{"role": "system", "content": system_prompt}]
+                            for msg in current_chat["messages"]:
+                                text_only_messages.append({"role": msg["role"], "content": msg["content"]})
+                            text_only_messages.append({
+                                "role": "user",
+                                "content": "Reminder: respond in the same language as this message only: " + question
+                            })
+                            answer, model_used = try_groq_models(GROQ_TEXT_MODELS, text_only_messages)
+                    else:
+                        answer, model_used = try_groq_models(GROQ_TEXT_MODELS, conversation_messages)
+                except Exception as e:
+                    st.error("All AI models failed. Please check your API key or try again later. Error: " + str(e))
+                    st.stop()
 
         # Check if the response asks to generate an image
         if "[GENERATE_IMAGE:" in answer:
