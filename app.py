@@ -5,6 +5,7 @@ import uuid
 import base64
 import io
 import csv
+import re
 import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.parse
@@ -338,11 +339,10 @@ def extract_text_from_xml(file_bytes):
 
 def extract_text_from_rtf(file_bytes):
     text = extract_text_from_txt(file_bytes)
-    import re
     text = re.sub(r"\\[a-z]+\d*\s?", "", text)
     text = re.sub(r"[{}]", "", text)
     return text
-import re
+
 
 def fix_latex_delimiters(text):
     """Convert AI's bracket-style equations into proper $ LaTeX so Streamlit renders them."""
@@ -363,6 +363,7 @@ def fix_latex_delimiters(text):
     text = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', text, flags=re.DOTALL)
 
     return text
+
 
 def call_gemini(system_prompt, conversation_messages, api_key):
     client = genai.Client(api_key=api_key)
@@ -812,8 +813,9 @@ try:
                 except Exception as e:
                     st.error("All AI models failed. Please check your API key or try again later. Error: " + str(e))
                     st.stop()
-         answer = fix_latex_delimiters(answer)
-        
+
+        answer = fix_latex_delimiters(answer)
+
         # Check if the response asks to generate an image
         if "[GENERATE_IMAGE:" in answer:
             parts = answer.split("[GENERATE_IMAGE:")
@@ -878,4 +880,3 @@ try:
 except Exception as e:
     st.error("An error occurred while running Aquanis:")
     st.code(traceback.format_exc())
-
