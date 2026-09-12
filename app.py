@@ -722,7 +722,7 @@ try:
             "content": "Reminder: respond in the same language as this message only: " + question
         })
 
-        model_to_use = "meta-llama/llama-4-maverick-17b-128e-instruct" if image_data_url else "meta-llama/llama-4-scout-17b-16e-instruct"
+        model_to_use = "llama-3.2-11b-vision-preview" if image_data_url else "openai/gpt-oss-120b"
 
         with st.spinner(t["thinking"]):
             if st.session_state.ai_provider == "Gemini" and not image_data_url:
