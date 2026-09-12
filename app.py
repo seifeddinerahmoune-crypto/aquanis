@@ -364,9 +364,6 @@ def fix_latex_delimiters(text):
 
     return text
 
-
-def call_gemini(system_prompt, conversation_messages, api_key):
-
 def call_gemini(system_prompt, conversation_messages, api_key):
     client = genai.Client(api_key=api_key)
     contents = []
