@@ -711,12 +711,14 @@ try:
         })
 
         # ------------------------------------------------------------------
-        # FIXED: Real, active Groq model IDs (the old list had nonexistent models)
+        # FIXED: Real, active Groq model IDs & Decommissioning resilience
         # ------------------------------------------------------------------
+        # Note: mixtral-8x7b-32768 was decommissioned by Groq and causes 400 errors.
+        # Active production models on Groq:
         GROQ_TEXT_MODELS = [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
+            "llama-3.3-70b-specdec",
         ]
         GROQ_VISION_MODELS = [
             "llama-3.2-11b-vision-preview",
@@ -728,14 +730,20 @@ try:
             for m in models:
                 try:
                     resp = groq_client.chat.completions.create(model=m, messages=messages)
-                    return resp.choices[0].message.content, m
+                    if resp and resp.choices and len(resp.choices) > 0 and resp.choices[0].message.content:
+                        return resp.choices[0].message.content, m
                 except Exception as e:
                     last_err = e
                     err_msg = str(e).lower()
-                    if "not found" in err_msg or "does not exist" in err_msg or "deprecated" in err_msg:
+                    # Skip decommissioned, deprecated, not found, or rate-limited models seamlessly
+                    if any(k in err_msg for k in [
+                        "decommissioned", "deprecated", "not found", "does not exist",
+                        "model_decommissioned", "invalid_request_error", "rate_limit",
+                        "429", "400", "404", "503", "overloaded", "tpm", "rpm"
+                    ]):
                         continue
-                    raise
-            raise last_err
+                    continue
+            raise last_err if last_err else Exception("All Groq models failed to respond.")
 
         with st.spinner(t["thinking"]):
             answer = None
