@@ -345,6 +345,30 @@ def extract_text_from_rtf(file_bytes):
 
 
 def call_gemini(system_prompt, conversation_messages, api_key):
+    import re
+
+def fix_latex_delimiters(text):
+    """Convert AI's bracket-style equations into proper $ LaTeX so Streamlit renders them."""
+    if not text:
+        return text
+
+    def repl_block(m):
+        content = m.group(1).strip()
+        return "$$" + content + "$$"
+
+    # Convert [ ... ] blocks that contain LaTeX commands (backslashes) into $$ ... $$
+    text = re.sub(r'\[\s*\n?(.*?)\n?\s*\]', lambda m: repl_block(m) if '\\' in m.group(1) else m.group(0), text, flags=re.DOTALL)
+
+    # Convert \( ... \) into $ ... $ (inline)
+    text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text, flags=re.DOTALL)
+
+    # Convert \[ ... \] into $$ ... $$ (block)
+    text = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', text, flags=re.DOTALL)
+
+    return text
+
+
+def call_gemini(system_prompt, conversation_messages, api_key):
     client = genai.Client(api_key=api_key)
     contents = []
     for msg in conversation_messages:
