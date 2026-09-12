@@ -268,13 +268,8 @@ def extract_text_from_xlsx(file_bytes):
                 parts.append(row_text)
     return "\n".join(parts)
 
-# ---------- FREE Image generation via Pollinations.ai ----------
+
 def generate_image(prompt, width=1024, height=768, seed=None):
-    """
-    Generate any image (photos, diagrams, illustrations) via Pollinations.ai.
-    Completely free. No API key. No account. No credit card.
-    Uses the Flux model by default.
-    """
     encoded = urllib.parse.quote(prompt)
     url = (
         f"https://image.pollinations.ai/prompt/{encoded}"
@@ -286,7 +281,7 @@ def generate_image(prompt, width=1024, height=768, seed=None):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=60) as response:
             if response.status == 200:
-                return response.read()  # raw image bytes
+                return response.read()
     except Exception as e:
         print(f"Pollinations error: {e}")
     return None
@@ -357,8 +352,8 @@ def call_gemini(system_prompt, conversation_messages, api_key):
         else:
             contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
-    # Try models in order: newest first, then fall back to older ones
-    models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"]
+    # Updated: Use active Gemini models in the modern Google GenAI SDK
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     last_error = None
 
     for model_name in models_to_try:
@@ -377,7 +372,6 @@ def call_gemini(system_prompt, conversation_messages, api_key):
 
 
 class FakePrompt:
-    """Mimics a st.chat_input return object for pending questions."""
     def __init__(self, text):
         self.text = text
         self.files = []
@@ -410,7 +404,6 @@ try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     CHROMA_PATH = "chroma_db"
     CHATS_FILE = "chats.json"
-    # NOTE: No Replicate client needed — Pollinations is free and keyless.
 
     def load_all_chats():
         if os.path.exists(CHATS_FILE):
@@ -678,30 +671,26 @@ try:
             context = "No course documents found in the knowledge base."
             sources = []
 
+        # FIXED & GROUNDED SYSTEM PROMPT: Enforces exact hydraulic equations!
         system_prompt = (
-            "You are Aquanis, a helpful assistant for hydraulics engineers and students. "
-            "CRITICAL LANGUAGE RULE: Detect the language of ONLY the most recent user message (ignore the language "
-            "of earlier messages in the conversation). Respond ENTIRELY in that same language, whether it is English, "
-            "French, Arabic, or any other language. Do not mix languages or switch languages mid-response. "
-            "Use the course context below to answer questions. If an image or file is attached, "
-            "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
-            "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
-            "If the answer is not available, say so in the same language as the latest question. "
-            "Use earlier conversation only for context/meaning, not for language choice.\n\n"
-            "ONLY include a [GENERATE_IMAGE:your detailed image prompt here] tag when the user "
-            "EXPLICITLY asks you to create, draw, generate, or show an image, photo, diagram, "
-            "illustration, or visual. Do NOT generate images for normal questions, explanations, "
-            "calculations, or text-only answers. If you include the tag, put it at the END of your response. "
-            "The prompt inside the tag must be in English and highly descriptive. "
-            "You can generate ANY type of image — technical diagrams, 3D renders, photos, sketches, "
-            "infographics, flow charts, or conceptual art — not just diagrams.\n\n"
+            "You are Aquanis, an authoritative assistant for hydraulics engineers and students (ENSH).\n"
+            "CRITICAL HYDRAULIC EQUATIONS RULE:\n"
+            "1. Available Net Positive Suction Head (NPSHa):\n"
+            "   NPSHa = (P_atm / (rho * g)) + z_sup - (P_vap / (rho * g)) - h_f_suction\n"
+            "   In LaTeX: \\text{NPSH}_a = \\frac{P_{\\text{atm}}}{\\rho g} \\pm z_{\\text{sup}} - \\frac{P_{\\text{vap}}}{\\rho g} - h_f^{\\text{suction}}\n"
+            "   IMPORTANT: z_sup is already a static elevation head in meters [m]. NEVER divide z_sup by g! Dividing by g would result in units of s^2, which is dimensionally incorrect.\n"
+            "   Use +z_sup for flooded suction (surface above pump) and -z_sup for suction lift (pump above surface).\n"
+            "2. Bernoulli Equation: \\frac{P_1}{\\rho g} + z_1 + \\frac{v_1^2}{2g} = \\frac{P_2}{\\rho g} + z_2 + \\frac{v_2^2}{2g} + h_L\n"
+            "3. Darcy-Weisbach head loss: h_f = f \\frac{L}{D} \\frac{v^2}{2g}\n\n"
+            "CRITICAL LANGUAGE RULE: Detect the language of ONLY the most recent user message. Respond ENTIRELY in that same language (English, French, or Arabic). "
+            "Write mathematical equations and formulas using LaTeX syntax with single $ for inline and $$ for standalone equations.\n\n"
+            "ONLY include a [GENERATE_IMAGE:your detailed image prompt here] tag when the user EXPLICITLY asks to create, draw, or generate an image/diagram.\n\n"
             "Course context:\n" + context
         )
 
         if extra_text_context:
             system_prompt += "\n\nAttached file content:\n" + extra_text_context
 
-        # Build conversation for API
         conversation_messages = [{"role": "system", "content": system_prompt}]
         num_messages = len(current_chat["messages"])
         for i, msg in enumerate(current_chat["messages"]):
@@ -716,21 +705,18 @@ try:
             else:
                 conversation_messages.append({"role": msg["role"], "content": msg["content"]})
 
-        # Language reminder integrated into user message instead of a second system message
         conversation_messages.append({
             "role": "user",
             "content": "Reminder: respond in the same language as this message only: " + question
         })
 
         # ------------------------------------------------------------------
-        # Robust model fallback — Groq deprecates models often.
-        # We try multiple models in priority order so the app never dies.
+        # FIXED: Real, active Groq model IDs (the old list had nonexistent models)
         # ------------------------------------------------------------------
         GROQ_TEXT_MODELS = [
-            "openai/gpt-oss-120b",
-            "qwen/qwen3.6-27b",
-            "openai/gpt-oss-20b",
+            "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
         ]
         GROQ_VISION_MODELS = [
             "llama-3.2-11b-vision-preview",
@@ -738,7 +724,6 @@ try:
         ]
 
         def try_groq_models(models, messages):
-            """Try each model until one works. Returns (answer, model_used)."""
             last_err = None
             for m in models:
                 try:
@@ -748,34 +733,29 @@ try:
                     last_err = e
                     err_msg = str(e).lower()
                     if "not found" in err_msg or "does not exist" in err_msg or "deprecated" in err_msg:
-                        continue  # Try next model
-                    raise  # Real error, stop
+                        continue
+                    raise
             raise last_err
 
         with st.spinner(t["thinking"]):
             answer = None
             model_used = None
 
-            # 1) Try Gemini first if selected and no image
             if st.session_state.ai_provider == "Gemini" and not image_data_url:
                 try:
                     answer = call_gemini(system_prompt, conversation_messages, st.secrets.get("GEMINI_API_KEY"))
-                    model_used = "gemini-2.0-flash"
+                    model_used = "gemini-2.5-flash"
                 except Exception as e:
                     st.warning("Gemini failed, falling back to Groq: " + str(e))
                     answer = None
 
-            # 2) Groq with cascading fallback
             if answer is None:
                 try:
                     if image_data_url:
-                        # Try vision models first, then fall back to text-only
                         try:
                             answer, model_used = try_groq_models(GROQ_VISION_MODELS, conversation_messages)
                         except Exception:
-                            # Vision models all dead — strip image and use text model
-                            st.warning("Vision models unavailable. Analyzing image description with text model...")
-                            # Rebuild messages without the image_url payload
+                            st.warning("Vision models unavailable. Analyzing text description...")
                             text_only_messages = [{"role": "system", "content": system_prompt}]
                             for msg in current_chat["messages"]:
                                 text_only_messages.append({"role": msg["role"], "content": msg["content"]})
@@ -790,14 +770,12 @@ try:
                     st.error("All AI models failed. Please check your API key or try again later. Error: " + str(e))
                     st.stop()
 
-        # Check if the response asks to generate an image
         if "[GENERATE_IMAGE:" in answer:
             parts = answer.split("[GENERATE_IMAGE:")
             text_part = parts[0].strip()
             image_prompt_part = parts[1].split("]", 1)[0].strip() if len(parts) > 1 else ""
             remaining_text = parts[1].split("]", 1)[1].strip() if len(parts) > 1 and "]" in parts[1] else ""
 
-            # Display text before image
             if text_part:
                 st.markdown(
                     f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
@@ -805,19 +783,16 @@ try:
                     unsafe_allow_html=True
                 )
 
-            # Generate and display image via Pollinations (FREE, no key)
             assistant_image_data_url = None
             if image_prompt_part:
                 with st.spinner("🎨 Generating image..."):
                     image_bytes = generate_image(image_prompt_part)
                     if image_bytes:
-                        # Convert bytes to base64 data URL so it persists in chat history
                         assistant_image_data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("utf-8")
                         st.image(assistant_image_data_url, caption=image_prompt_part, use_container_width=True)
                     else:
                         st.warning("Could not generate image. The image service may be busy — please try again.")
 
-            # Display remaining text after image
             if remaining_text:
                 final_answer = remaining_text + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
                 st.markdown(
