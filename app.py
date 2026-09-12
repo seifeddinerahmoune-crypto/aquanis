@@ -1,264 +1,857 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
-import dotenv from "dotenv";
+import traceback
+import os
+import json
+import uuid
+import base64
+import io
+import csv
+import xml.etree.ElementTree as ET
+import urllib.request
+import urllib.parse
+from datetime import datetime
+import streamlit as st
+from sentence_transformers import SentenceTransformer
+import chromadb
+from groq import Groq
+from google import genai
+from google.genai import types
+import fitz
+from pptx import Presentation
+from docx import Document
+import openpyxl
 
-dotenv.config();
+st.set_page_config(page_title="Aquanis", page_icon="💧", layout="wide")
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+# ---------- Design tokens ----------
+BG = "#03111e"
+FG = "#e7f0f5"
+CARD = "#0a1c2c"
+PRIMARY = "#3dbfe2"
+PRIMARY_FG = "#010e1d"
+SECONDARY = "#112b40"
+MUTED_FG = "#879ca8"
+ACCENT = "#10364e"
+BORDER = "rgba(119, 184, 215, 0.15)"
+SIDEBAR = "#051729"
+SIDEBAR_ACCENT = "#0f283d"
 
-const app = express();
-const PORT = 3000;
-
-app.use(express.json({ limit: "10mb" }));
-
-// Lazy initialization of Gemini client
-let genAI: GoogleGenAI | null = null;
-function getGenAI(): GoogleGenAI | null {
-  if (!genAI && process.env.GEMINI_API_KEY) {
-    genAI = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-  }
-  return genAI;
+TRANSLATIONS = {
+    "en": {
+        "welcome_title": "Welcome to Aquanis",
+        "welcome_caption": "Sign in to save your chat history, or continue without an account.",
+        "sign_in": "Sign in with Google",
+        "continue_guest": "Continue without signing in",
+        "guest_warning": "Guest chats are not saved and will be lost if you refresh the page.",
+        "new_chat": "+ New chat",
+        "chat_name_label": "Chat name",
+        "chat_name_placeholder": "e.g. Reynolds number",
+        "create": "Create",
+        "cancel": "Cancel",
+        "recent_chats": "Recent chats",
+        "user_label": "User",
+        "guest_label": "Guest",
+        "log_out": "Log out",
+        "app_title": "New chat",
+        "welcome_sub": "Your AI companion for fluid mechanics and hydraulic engineering. Ask about pipe flow, pumps, open channels, hydrology, and more.",
+        "chat_input_placeholder": "Ask a question about hydraulics, or attach a file...",
+        "thinking": "Aquanis is thinking...",
+        "sources_label": "Sources",
+        "language_label": "Interface language",
+        "footer_note": "Aquanis can make mistakes. Verify critical hydraulic calculations.",
+        "suggestions": [
+            "Explain the Bernoulli equation with a practical example",
+            "How do I size a centrifugal pump for a pipeline?",
+            "Derive the Darcy-Weisbach head loss formula",
+            "What causes water hammer and how do I prevent it?",
+        ],
+    },
+    "fr": {
+        "welcome_title": "Bienvenue sur Aquanis",
+        "welcome_caption": "Connectez-vous pour sauvegarder vos discussions, ou continuez sans compte.",
+        "sign_in": "Se connecter avec Google",
+        "continue_guest": "Continuer sans se connecter",
+        "guest_warning": "Les discussions invité ne sont pas sauvegardées et seront perdues si vous actualisez la page.",
+        "new_chat": "+ Nouvelle discussion",
+        "chat_name_label": "Nom de la discussion",
+        "chat_name_placeholder": "ex: Nombre de Reynolds",
+        "create": "Créer",
+        "cancel": "Annuler",
+        "recent_chats": "Discussions récentes",
+        "user_label": "Utilisateur",
+        "guest_label": "Invité",
+        "log_out": "Se déconnecter",
+        "app_title": "Nouvelle discussion",
+        "welcome_sub": "Votre assistant IA pour la mécanique des fluides et l'hydraulique. Posez vos questions sur les écoulements, les pompes, les canaux ouverts, l'hydrologie, et plus encore.",
+        "chat_input_placeholder": "Posez une question, ou joignez un fichier...",
+        "thinking": "Aquanis réfléchit...",
+        "sources_label": "Sources",
+        "language_label": "Langue de l'interface",
+        "footer_note": "Aquanis peut faire des erreurs. Vérifiez les calculs hydrauliques critiques.",
+        "suggestions": [
+            "Expliquer l'équation de Bernoulli avec un exemple pratique",
+            "Comment dimensionner une pompe centrifuge pour une conduite ?",
+            "Démontrer la formule de perte de charge de Darcy-Weisbach",
+            "Quelles sont les causes du coup de bélier et comment l'éviter ?",
+        ],
+    },
+    "ar": {
+        "welcome_title": "مرحبا بك في Aquanis",
+        "welcome_caption": "سجل الدخول لحفظ محادثاتك، أو تابع بدون حساب.",
+        "sign_in": "تسجيل الدخول بجوجل",
+        "continue_guest": "المتابعة بدون تسجيل الدخول",
+        "guest_warning": "لا يتم حفظ محادثات الضيف وستفقد عند تحديث الصفحة.",
+        "new_chat": "+ محادثة جديدة",
+        "chat_name_label": "اسم المحادثة",
+        "chat_name_placeholder": "مثال: عدد رينولدز",
+        "create": "إنشاء",
+        "cancel": "إلغاء",
+        "recent_chats": "المحادثات الأخيرة",
+        "user_label": "المستخدم",
+        "guest_label": "ضيف",
+        "log_out": "تسجيل الخروج",
+        "app_title": "محادثة جديدة",
+        "welcome_sub": "مساعدك الذكي في ميكانيكا الموائع والهندسة الهيدروليكية. اسأل عن جريان الأنابيب، المضخات، القنوات المفتوحة، الهيدرولوجيا، والمزيد.",
+        "chat_input_placeholder": "اطرح سؤالا، أو أرفق ملفا...",
+        "thinking": "Aquanis يفكر...",
+        "sources_label": "المصادر",
+        "language_label": "لغة الواجهة",
+        "footer_note": "قد يخطئ Aquanis. تحقق من الحسابات الهيدروليكية الهامة.",
+        "suggestions": [
+            "اشرح معادلة برنولي بمثال عملي",
+            "كيف أحدد حجم مضخة طاردة مركزية لخط أنابيب؟",
+            "اشتق معادلة فقدان الضغط دارسي-فايسباخ",
+            "ما أسباب المطرقة المائية وكيف أمنعها؟",
+        ],
+    },
 }
 
-// Hydraulics fallback knowledge engine for offline / unconfigured API keys
-function getHydraulicsFallbackResponse(message: string, language: string = "en"): string {
-  const lower = message.toLowerCase();
-  
-  if (lower.includes("v =") || lower.includes("q/a") || lower.includes("velocity") || lower.includes("débit") || lower.includes("vitesse") || lower.includes("سرعة")) {
-    if (language === "fr") {
-      return `### Équation de Continuité et Vitesse d'Écoulement
+if "ui_lang" not in st.session_state:
+    st.session_state.ui_lang = "en"
 
-Pour un écoulement incompressible dans une conduite circulaire de diamètre $D$ et de section $A$ :
+t = TRANSLATIONS[st.session_state.ui_lang]
+is_rtl = st.session_state.ui_lang == "ar"
 
-$$V = \\frac{Q}{A} = \\frac{Q}{\\frac{\\pi D^{2}}{4}} = \\frac{4Q}{\\pi D^{2}}$$
+if "guest_mode" not in st.session_state:
+    st.session_state.guest_mode = False
+if "guest_id" not in st.session_state:
+    st.session_state.guest_id = "guest_" + str(uuid.uuid4())
+if "ai_provider" not in st.session_state:
+    st.session_state.ai_provider = "Groq"
 
-Où :
-- $V$ : Vitesse moyenne d'écoulement ($m/s$)
-- $Q$ : Débit volumique ($m^3/s$)
-- $A$ : Aire de la section transversale ($m^2$), avec $A = \\frac{\\pi D^2}{4}$
-- $D$ : Diamètre intérieur de la conduite ($m$)
+# ---------- Global theme CSS ----------
+st.markdown(f"""
+<style>
+.stApp {{
+    background-color: {BG};
+    color: {FG};
+    {"direction: rtl;" if is_rtl else ""}
+}}
+[data-testid="stSidebar"] {{
+    background-color: {SIDEBAR};
+    border-right: 1px solid {BORDER};
+}}
+[data-testid="stSidebar"] * {{
+    color: {FG} !important;
+}}
+.stButton button {{
+    background-color: transparent;
+    border: 1px solid transparent;
+    text-align: left;
+    color: {FG};
+    border-radius: 10px;
+}}
+.stButton button:hover {{
+    background-color: {SIDEBAR_ACCENT};
+    color: {PRIMARY};
+    border: 1px solid {BORDER};
+}}
+[data-testid="stChatInput"] {{
+    background-color: {CARD};
+    border: 1px solid {BORDER};
+    border-radius: 16px;
+}}
+.aquanis-logo {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(61, 191, 226, 0.15);
+    font-size: 20px;
+    margin-right: 8px;
+}}
+.aquanis-header {{
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid {BORDER};
+    padding-bottom: 14px;
+    margin-bottom: 8px;
+}}
+.aquanis-user-bubble {{
+    display: flex;
+    justify-content: flex-end;
+    margin: 10px 0;
+}}
+.aquanis-user-bubble-inner {{
+    max-width: 75%;
+    background-color: {PRIMARY};
+    color: {PRIMARY_FG};
+    padding: 12px 16px;
+    border-radius: 18px 18px 4px 18px;
+    font-size: 14px;
+    line-height: 1.5;
+}}
+.aquanis-assistant-bubble {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 10px 0;
+}}
+.aquanis-assistant-bubble-inner {{
+    max-width: 75%;
+    background-color: {CARD};
+    border: 1px solid {BORDER};
+    color: {FG};
+    padding: 12px 16px;
+    border-radius: 18px 18px 18px 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-line;
+}}
+.aquanis-suggestion {{
+    border: 1px solid {BORDER};
+    background-color: {CARD};
+    border-radius: 14px;
+    padding: 14px;
+    font-size: 13px;
+    color: {FG};
+}}
+.aquanis-footer-note {{
+    text-align: center;
+    font-size: 11px;
+    color: {MUTED_FG};
+    margin-top: 8px;
+}}
+</style>
+""", unsafe_allow_html=True)
 
-**Application pratique :** Si vous doublez le diamètre $D$ pour un même débit $Q$, la vitesse est divisée par 4 car $V \\propto \\frac{1}{D^2}$.`;
-    } else if (language === "ar") {
-      return `### معادلة الاستمرارية وسرعة الجريان
 
-للجريان غير القابل للانضغاط في أنبوب دائري ذي قطر $D$ ومساحة مقطع $A$:
+# ---------- File extraction functions ----------
+def extract_text_from_pdf(file_bytes):
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    return "\n".join(page.get_text() for page in doc)
 
-$$V = \\frac{Q}{A} = \\frac{Q}{\\frac{\\pi D^{2}}{4}} = \\frac{4Q}{\\pi D^{2}}$$
 
-حيث:
-- $V$: متوسط سرعة الجريان ($m/s$)
-- $Q$: معدل التدفق الحجمي ($m^3/s$)
-- $A$: مساحة المقطع العرضي ($m^2$)، حيث $A = \\frac{\\pi D^2}{4}$
-- $D$: القطر الداخلي للأنبوب ($m$)
+def extract_text_from_pptx(file_bytes):
+    prs = Presentation(io.BytesIO(file_bytes))
+    parts = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                parts.append(shape.text)
+    return "\n".join(parts)
 
-**ملاحظة هيدروليكية:** إذا تضاعف قطر الأنبوب $D$ مع بقاء التدفق $Q$ ثابتاً، تنخفض السرعة بمقدار الربع لأن $V \\propto \\frac{1}{D^2}$.`;
-    }
-    return `### Pipe Flow Velocity & Continuity Equation
 
-For steady, incompressible flow through a circular pipe of internal diameter $D$ and cross-sectional area $A$:
+def extract_text_from_docx(file_bytes):
+    doc = Document(io.BytesIO(file_bytes))
+    return "\n".join(p.text for p in doc.paragraphs)
 
-$$V = \\frac{Q}{A} = \\frac{Q}{\\frac{\\pi D^{2}}{4}} = \\frac{4Q}{\\pi D^{2}}$$
 
-Where:
-- $V$ : Mean fluid flow velocity ($m/s$ or $ft/s$)
-- $Q$ : Volumetric flow rate ($m^3/s$ or $cfs$)
-- $A$ : Pipe cross-sectional area ($m^2$ or $ft^2$), given by $A = \\frac{\\pi D^2}{4}$
-- $D$ : Internal pipe diameter ($m$ or $ft$)
+def extract_text_from_xlsx(file_bytes):
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    parts = []
+    for sheet in wb.worksheets:
+        for row in sheet.iter_rows(values_only=True):
+            row_text = " | ".join(str(cell) for cell in row if cell is not None)
+            if row_text:
+                parts.append(row_text)
+    return "\n".join(parts)
 
-**Key Engineering Insights:**
-1. **Inverse Square Law**: Velocity varies inversely with the square of the pipe diameter ($V \\propto 1/D^2$). Doubling pipe diameter reduces velocity to $25\\%$.
-2. **Economic Sizing**: Standard water distribution networks typically target velocities between $1.0\\text{ m/s}$ and $2.5\\text{ m/s}$ to minimize both pumping friction losses and pipe installation capital costs.`;
-  }
+# ---------- FREE Image generation via Pollinations.ai ----------
+def generate_image(prompt, width=1024, height=768, seed=None):
+    """
+    Generate any image (photos, diagrams, illustrations) via Pollinations.ai.
+    Completely free. No API key. No account. No credit card.
+    Uses the Flux model by default.
+    """
+    encoded = urllib.parse.quote(prompt)
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width={width}&height={height}&nologo=true&enhance=true"
+    )
+    if seed is not None:
+        url += f"&seed={seed}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as response:
+            if response.status == 200:
+                return response.read()  # raw image bytes
+    except Exception as e:
+        print(f"Pollinations error: {e}")
+    return None
 
-  if (lower.includes("bernoulli")) {
-    return `### The Bernoulli Equation
 
-For steady, incompressible, inviscid flow along a streamline:
+def extract_text_from_csv(file_bytes):
+    text_lines = []
+    decoded = None
+    for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+        try:
+            decoded = file_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        decoded = file_bytes.decode("utf-8", errors="ignore")
+    try:
+        for row in csv.reader(decoded.splitlines()):
+            text_lines.append(" | ".join(row))
+    except Exception:
+        text_lines.append(decoded)
+    return "\n".join(text_lines)
 
-$$P_1 + \\frac{1}{2} \\rho V_1^2 + \\rho g z_1 = P_2 + \\frac{1}{2} \\rho V_2^2 + \\rho g z_2$$
 
-Divided by specific weight $\\gamma = \\rho g$, it is expressed in terms of **hydraulic heads** (meters of fluid column):
+def extract_text_from_txt(file_bytes):
+    for encoding in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+        try:
+            return file_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return file_bytes.decode("utf-8", errors="ignore")
 
-$$\\underbrace{\\frac{P_1}{\\gamma}}_{\\text{Pressure Head}} + \\underbrace{\\frac{V_1^2}{2g}}_{\\text{Velocity Head}} + \\underbrace{z_1}_{\\text{Elevation Head}} = \\frac{P_2}{\\gamma} + \\frac{V_2^2}{2g} + z_2 + h_L$$
 
-Where $h_L$ represents total head loss (pipe friction + minor local losses).`;
-  }
+def extract_text_from_json(file_bytes):
+    try:
+        data = json.loads(file_bytes.decode("utf-8"))
+        return json.dumps(data, indent=2)
+    except Exception:
+        return extract_text_from_txt(file_bytes)
 
-  if (lower.includes("darcy") || lower.includes("head loss") || lower.includes("weisbach") || lower.includes("perte de charge")) {
-    return `### Darcy-Weisbach Equation for Head Loss
 
-Frictional head loss $h_f$ in a pressurized pipe is governed by:
+def extract_text_from_xml(file_bytes):
+    try:
+        root = ET.fromstring(file_bytes)
+        return ET.tostring(root, encoding="unicode")
+    except Exception:
+        return extract_text_from_txt(file_bytes)
 
-$$h_f = f \\cdot \\frac{L}{D} \\cdot \\frac{V^2}{2g}$$
 
-Substituting the continuity velocity $V = \\frac{4Q}{\\pi D^2}$:
+def extract_text_from_rtf(file_bytes):
+    text = extract_text_from_txt(file_bytes)
+    import re
+    text = re.sub(r"\\[a-z]+\d*\s?", "", text)
+    text = re.sub(r"[{}]", "", text)
+    return text
 
-$$h_f = f \\cdot \\frac{L}{D} \\cdot \\frac{1}{2g}\\left(\\frac{4Q}{\\pi D^2}\\right)^2 = \\frac{8 f L Q^2}{\\pi^2 g D^5}$$
 
-Notice that frictional head loss scales inversely with $D^5$! Sizing up a pipe slightly yields massive reductions in pumping energy head.`;
-  }
+def call_gemini(system_prompt, conversation_messages, api_key):
+    client = genai.Client(api_key=api_key)
+    contents = []
+    for msg in conversation_messages:
+        if msg["role"] == "system":
+            continue
+        role = "model" if msg["role"] == "assistant" else "user"
+        if isinstance(msg["content"], list):
+            text_part = next((c["text"] for c in msg["content"] if c.get("type") == "text"), "")
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text_part)]))
+        else:
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
-  if (lower.includes("reynolds")) {
-    return `### Reynolds Number ($Re$) & Flow Regimes
+    # Try models in order: newest first, then fall back to older ones
+    models_to_try = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-latest"]
+    last_error = None
 
-The dimensionless Reynolds number quantifies the ratio of inertial forces to viscous forces:
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=system_prompt)
+            )
+            return response.text
+        except Exception as e:
+            last_error = e
+            continue
 
-$$Re = \\frac{\\rho V D}{\\mu} = \\frac{V D}{\\nu}$$
+    raise last_error
 
-Where:
-- $\\rho$ : Fluid density ($kg/m^3$, $\\approx 1000\\text{ kg/m}^3$ for water at $20^\\circ\\text{C}$)
-- $V$ : Mean flow velocity ($m/s$)
-- $D$ : Internal pipe diameter ($m$)
-- $\\mu$ : Dynamic viscosity ($Pa\\cdot s$ or $N\\cdot s/m^2$)
-- $\\nu = \\mu / \\rho$ : Kinematic viscosity ($m^2/s$, $\\approx 1.004 \\times 10^{-6}\\text{ m}^2/s$ for water at $20^\\circ\\text{C}$)
 
-**Flow Regimes in Closed Conduits:**
-- **Laminar Flow**: $Re < 2300$ (Friction factor $f = \\frac{64}{Re}$)
-- **Transitional Zone**: $2300 \\le Re \\le 4000$ (Unstable)
-- **Turbulent Flow**: $Re > 4000$ (Governed by Colebrook-White equation or Moody chart)`;
-  }
+class FakePrompt:
+    """Mimics a st.chat_input return object for pending questions."""
+    def __init__(self, text):
+        self.text = text
+        self.files = []
 
-  if (lower.includes("water hammer") || lower.includes("coup de bélier") || lower.includes("مطرقة")) {
-    return `### Water Hammer (Joukowsky Surge Pressure)
+try:
+    is_logged_in = st.user.is_logged_in
 
-When a valve closes rapidly in time $t_c < \\frac{2L}{a}$, a pressure wave propagates through the fluid. The maximum transient pressure rise $\\Delta P$ is given by the **Joukowsky Equation**:
+    if not is_logged_in and not st.session_state.guest_mode:
+        st.markdown("<div class='aquanis-logo'>💧</div>", unsafe_allow_html=True)
+        st.markdown("### " + t["welcome_title"])
+        st.caption(t["welcome_caption"])
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(t["sign_in"], use_container_width=True):
+                st.login()
+        with col2:
+            if st.button(t["continue_guest"], use_container_width=True):
+                st.session_state.guest_mode = True
+                st.rerun()
+        st.caption(t["guest_warning"])
+        st.stop()
 
-$$\\Delta P = \\rho \\cdot a \\cdot \\Delta V$$
+    if is_logged_in:
+        user_identity = st.user.email
+        display_name = st.user.name
+    else:
+        user_identity = st.session_state.guest_id
+        display_name = t["guest_label"]
 
-In terms of pressure head rise $\\Delta H$:
+    groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    CHROMA_PATH = "chroma_db"
+    CHATS_FILE = "chats.json"
+    # NOTE: No Replicate client needed — Pollinations is free and keyless.
 
-$$\\Delta H = \\frac{a \\cdot \\Delta V}{g}$$
+    def load_all_chats():
+        if os.path.exists(CHATS_FILE):
+            with open(CHATS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
-Where:
-- $a$ : Pressure wave propagation speed (celerity), typically $900 - 1200\\text{ m/s}$ in steel/ductile iron pipes
-- $\\Delta V$ : Rapid reduction in flow velocity ($m/s$)
-- $g$ : Acceleration due to gravity ($9.81\\text{ m/s}^2$)
+    def save_all_chats(all_chats):
+        with open(CHATS_FILE, "w", encoding="utf-8") as f:
+            json.dump(all_chats, f, ensure_ascii=False, indent=2)
 
-**Mitigation Measures:**
-- Slow-closing automated valves ($t > 2L/a$)
-- Surge tanks and air relief chambers
-- Water hammer arrestors and pressure relief valves`;
-  }
+    def load_chats(user_key):
+        all_chats = load_all_chats()
+        return all_chats.get(user_key, {})
 
-  return `### Aquanis Hydraulics Assistant
+    def save_chats(user_key, chats):
+        all_chats = load_all_chats()
+        all_chats[user_key] = chats
+        save_all_chats(all_chats)
 
-Hydraulic calculation and fluid mechanics overview for your query:
+    if "chats" not in st.session_state:
+        st.session_state.chats = load_chats(user_identity) if is_logged_in else {}
 
-Continuity equation across pipe cross-sections:
-$$Q = A_1 V_1 = A_2 V_2$$
+    if "current_chat_id" not in st.session_state:
+        st.session_state.current_chat_id = (
+            list(st.session_state.chats.keys())[0] if st.session_state.chats else None
+        )
 
-For circular pipes with diameter $D$:
-$$V = \\frac{Q}{A} = \\frac{4Q}{\\pi D^2}$$
+    if "creating_new_chat" not in st.session_state:
+        st.session_state.creating_new_chat = False
 
-Total energy grade line (EGL) with head losses:
-$$H_1 = H_2 + h_f + h_m$$
+    @st.cache_resource
+    def load_resources():
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        client = chromadb.PersistentClient(path=CHROMA_PATH)
+        collection = client.get_or_create_collection("aquanis_docs")
+        return model, collection
 
-Where $h_f = f \\frac{L}{D} \\frac{V^2}{2g}$ and minor losses $h_m = \\sum K \\frac{V^2}{2g}$.
+    model, collection = load_resources()
 
-Feel free to specify your pipe parameters ($Q$, $D$, fluid properties, roughness) or ask about pumps, open channel flow, or transient surges!`;
-}
+    # ---------- Sidebar ----------
+    with st.sidebar:
+        st.markdown(
+            f"<div style='display:flex; align-items:center; gap:10px; padding:4px 0 12px;'>"
+            f"<span class='aquanis-logo'>💧</span>"
+            f"<div><div style='font-weight:600; font-size:17px;'>Aquanis</div>"
+            f"<div style='font-size:12px; color:{MUTED_FG};'>🌊 Hydraulics AI</div></div></div>",
+            unsafe_allow_html=True
+        )
 
-// API Health Check
-app.get("/api/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
-  });
-});
+        lang_options = {"English": "en", "Français": "fr", "العربية": "ar"}
+        lang_names = list(lang_options.keys())
+        current_lang_name = [k for k, v in lang_options.items() if v == st.session_state.ui_lang][0]
+        selected_lang_name = st.selectbox(t["language_label"], lang_names, index=lang_names.index(current_lang_name))
+        selected_lang_code = lang_options[selected_lang_name]
+        if selected_lang_code != st.session_state.ui_lang:
+            st.session_state.ui_lang = selected_lang_code
+            st.rerun()
 
-// API Route for Hydraulics Chat Assistant
-app.post("/api/chat", async (req, res) => {
-  try {
-    const { message, language = "en" } = req.body;
+        if st.button(t["new_chat"], use_container_width=True, type="primary"):
+            st.session_state.creating_new_chat = True
+            st.rerun()
 
-    if (!message || typeof message !== "string") {
-      res.status(400).json({ error: "Message is required" });
-      return;
-    }
+        if st.session_state.creating_new_chat:
+            new_name = st.text_input(t["chat_name_label"], placeholder=t["chat_name_placeholder"], key="new_chat_name")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button(t["create"], use_container_width=True):
+                    new_id = str(uuid.uuid4())
+                    title = new_name.strip() if new_name.strip() else t["new_chat"]
+                    st.session_state.chats[new_id] = {
+                        "title": title, "messages": [], "created": datetime.now().isoformat()
+                    }
+                    st.session_state.current_chat_id = new_id
+                    st.session_state.creating_new_chat = False
+                    if is_logged_in:
+                        save_chats(user_identity, st.session_state.chats)
+                    st.rerun()
+            with col_b:
+                if st.button(t["cancel"], use_container_width=True):
+                    st.session_state.creating_new_chat = False
+                    st.rerun()
 
-    const ai = getGenAI();
+        st.markdown("---")
+        st.markdown(
+            f"<p style='font-size:11px; letter-spacing:0.5px; color:{MUTED_FG}; text-transform:uppercase; margin-bottom:8px;'>{t['recent_chats']}</p>",
+            unsafe_allow_html=True
+        )
 
-    if (!ai) {
-      const fallbackText = getHydraulicsFallbackResponse(message, language);
-      res.json({
-        reply: fallbackText,
-        source: "aquanis_hydraulics_engine",
-      });
-      return;
-    }
+        for chat_id, chat in sorted(st.session_state.chats.items(), key=lambda x: x[1]["created"], reverse=True):
+            label = "💬 " + (chat["title"] if chat["title"] else t["new_chat"])
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+                    st.session_state.current_chat_id = chat_id
+                    st.rerun()
+            with col2:
+                if st.button("\U0001F5D1", key=f"del_{chat_id}"):
+                    del st.session_state.chats[chat_id]
+                    if st.session_state.current_chat_id == chat_id:
+                        remaining = list(st.session_state.chats.keys())
+                        st.session_state.current_chat_id = remaining[0] if remaining else None
+                    if is_logged_in:
+                        save_chats(user_identity, st.session_state.chats)
+                    st.rerun()
 
-    const systemInstruction = `You are Aquanis, an elite scientific and engineering AI assistant specialized in fluid mechanics, hydraulics, hydrology, and pipe network engineering.
+        st.markdown("---")
+        role_label = t["guest_label"] if not is_logged_in else "Student"
+        col_a, col_b = st.columns([5, 1])
+        with col_a:
+            st.markdown(
+                f"<div style='display:flex; align-items:center; gap:10px;'>"
+                f"<span style='display:flex; align-items:center; justify-content:center; width:34px; height:34px; "
+                f"border-radius:50%; background-color:rgba(61,191,226,0.15); font-size:16px;'>👤</span>"
+                f"<div><div style='font-size:13px; font-weight:500;'>{display_name}</div>"
+                f"<div style='font-size:11px; color:{MUTED_FG};'>{role_label}</div></div></div>",
+                unsafe_allow_html=True
+            )
+        with col_b:
+            if is_logged_in:
+                if st.button("↪", key="logout_btn"):
+                    st.logout()
+            else:
+                if st.button("↪", key="logout_btn_guest"):
+                    st.session_state.guest_mode = False
+                    st.session_state.chats = {}
+                    st.session_state.current_chat_id = None
+                    st.rerun()
 
-CRITICAL MATHEMATICAL FORMATTING RULES:
-1. Always format all mathematical formulas, fractions, derivatives, and equations using clean, standard LaTeX syntax.
-2. For standalone display equations, ALWAYS enclose them in double dollar signs: $$ ... $$
-   Example:
-   $$V = \\frac{Q}{A} = \\frac{Q}{\\frac{\\pi D^{2}}{4}} = \\frac{4Q}{\\pi D^{2}}$$
-3. For inline variables and math, ALWAYS enclose them in single dollar signs: $V$, $Q$, $D$, $\\rho$, $\\mu$.
-4. NEVER use brackets like ([ ... ]) or [ ... ] or \\( ... \\) or \\[ ... \\] for equations without dollar signs.
-5. Provide step-by-step mathematical derivations, clearly defining every physical variable, its SI unit, and practical hydraulic rules of thumb.
-6. Language: If the user asks in French, answer in French. If in Arabic, answer in Arabic. If in English, answer in English.`;
+    # ---------- Main area ----------
+    current_id = st.session_state.current_chat_id
 
-    const promptWithLang = `[User Language: ${language}]\n\nUser Question: ${message}`;
+    if current_id is None:
+        st.markdown(
+            "<div class='aquanis-header'><span class='aquanis-logo'>💧</span>"
+            "<span style='font-size:18px; font-weight:600;'>" + t["app_title"] + "</span></div>",
+            unsafe_allow_html=True
+        )
+        st.markdown("<div style='text-align:center; margin-top:40px;'><span style='font-size:48px;'>💧</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align:center;'>{t['welcome_title']}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; color:{MUTED_FG}; max-width:600px; margin:0 auto 24px;'>{t['welcome_sub']}</p>", unsafe_allow_html=True)
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: promptWithLang,
-      config: {
-        systemInstruction,
-        temperature: 0.2,
-      },
-    });
+        cols = st.columns(2)
+        clicked_suggestion = None
+        for i, suggestion in enumerate(t["suggestions"]):
+            with cols[i % 2]:
+                if st.button(suggestion, key=f"sugg_{i}", use_container_width=True):
+                    clicked_suggestion = suggestion
 
-    const reply = response.text || getHydraulicsFallbackResponse(message, language);
-    res.json({
-      reply,
-      source: "gemini",
-    });
-  } catch (error: any) {
-    console.error("Gemini API error in /api/chat:", error);
-    const fallbackText = getHydraulicsFallbackResponse(
-      req.body?.message || "",
-      req.body?.language || "en"
-    );
-    res.json({
-      reply: fallbackText,
-      source: "fallback_recovery",
-      error: error?.message,
-    });
-  }
-});
+        if clicked_suggestion:
+            new_id = str(uuid.uuid4())
+            st.session_state.chats[new_id] = {
+                "title": clicked_suggestion[:40], "messages": [], "created": datetime.now().isoformat()
+            }
+            st.session_state.current_chat_id = new_id
+            if is_logged_in:
+                save_chats(user_identity, st.session_state.chats)
+            st.session_state["pending_question"] = clicked_suggestion
+            st.rerun()
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+        st.stop()
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Aquanis hydraulics server running at http://0.0.0.0:${PORT}`);
-  });
-}
+    current_chat = st.session_state.chats[current_id]
 
-startServer();
+    st.markdown(
+        "<div class='aquanis-header'><span class='aquanis-logo'>💧</span>"
+        "<span style='font-size:18px; font-weight:600;'>" + current_chat["title"] + "</span></div>",
+        unsafe_allow_html=True
+    )
+
+    for msg in current_chat["messages"]:
+        if msg["role"] == "user":
+            st.markdown(
+                f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{msg['content']}</div></div>",
+                unsafe_allow_html=True
+            )
+            if msg.get("image"):
+                st.image(msg["image"], width=300)
+        else:
+            st.markdown(
+                f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                f"<div class='aquanis-assistant-bubble-inner'>{msg['content']}</div></div>",
+                unsafe_allow_html=True
+            )
+            if msg.get("image"):
+                st.image(msg["image"], use_container_width=True)
+
+    input_col, provider_col = st.columns([6, 1])
+
+    with input_col:
+        prompt = st.chat_input(
+            t["chat_input_placeholder"],
+            accept_file=True,
+            file_type=["png", "jpg", "jpeg", "pdf", "docx", "pptx", "xlsx", "xls", "csv", "txt", "json", "xml", "rtf"]
+        )
+
+    with provider_col:
+        st.session_state.ai_provider = st.selectbox(
+            "AI",
+            ["Groq", "Gemini"],
+            index=["Groq", "Gemini"].index(st.session_state.ai_provider),
+            label_visibility="collapsed"
+        )
+
+    pending = st.session_state.pop("pending_question", None)
+    if pending and not prompt:
+        prompt = FakePrompt(pending)
+
+    assistant_image_data_url = None
+    if prompt:
+        question = prompt.text if prompt.text else ""
+        uploaded_files = prompt.files if prompt.files else []
+
+        image_data_url = None
+        extra_text_context = ""
+
+        for f in uploaded_files:
+            file_bytes = f.read()
+            ext = f.name.split(".")[-1].lower()
+
+            try:
+                if ext in ["png", "jpg", "jpeg"]:
+                    base64_image = base64.b64encode(file_bytes).decode("utf-8")
+                    image_data_url = "data:" + f.type + ";base64," + base64_image
+                elif ext == "pdf":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pdf(file_bytes)
+                elif ext == "pptx":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_pptx(file_bytes)
+                elif ext == "docx":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_docx(file_bytes)
+                elif ext in ["xlsx", "xls"]:
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xlsx(file_bytes)
+                elif ext == "csv":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_csv(file_bytes)
+                elif ext == "txt":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_txt(file_bytes)
+                elif ext == "json":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_json(file_bytes)
+                elif ext == "xml":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_xml(file_bytes)
+                elif ext == "rtf":
+                    extra_text_context += "\n\n[Content from " + f.name + "]\n" + extract_text_from_rtf(file_bytes)
+            except Exception as e:
+                extra_text_context += f"\n\n[Could not extract content from {f.name}: {str(e)}]"
+
+        display_text = question if question else "(file attached)"
+        user_msg = {"role": "user", "content": display_text}
+        if image_data_url:
+            user_msg["image"] = image_data_url
+        current_chat["messages"].append(user_msg)
+        st.markdown(
+            f"<div class='aquanis-user-bubble'><div class='aquanis-user-bubble-inner'>{display_text}</div></div>",
+            unsafe_allow_html=True
+        )
+        if image_data_url:
+            st.image(image_data_url, width=300)
+
+        query_embedding = model.encode([display_text]).tolist()
+        results = collection.query(query_embeddings=query_embedding, n_results=4)
+
+        if results and results.get("documents") and results["documents"][0]:
+            context = "\n\n".join(results["documents"][0])
+            sources = list(set(r["source"] for r in results["metadatas"][0]))
+        else:
+            context = "No course documents found in the knowledge base."
+            sources = []
+
+        system_prompt = (
+            "You are Aquanis, a helpful assistant for hydraulics engineers and students. "
+            "CRITICAL LANGUAGE RULE: Detect the language of ONLY the most recent user message (ignore the language "
+            "of earlier messages in the conversation). Respond ENTIRELY in that same language, whether it is English, "
+            "French, Arabic, or any other language. Do not mix languages or switch languages mid-response. "
+            "Use the course context below to answer questions. If an image or file is attached, "
+            "analyze it and relate it to hydraulics concepts. Always write mathematical equations and "
+            "formulas using LaTeX syntax with single $ for inline and $$ for standalone equations. "
+            "If the answer is not available, say so in the same language as the latest question. "
+            "Use earlier conversation only for context/meaning, not for language choice.\n\n"
+            "ONLY include a [GENERATE_IMAGE:your detailed image prompt here] tag when the user "
+            "EXPLICITLY asks you to create, draw, generate, or show an image, photo, diagram, "
+            "illustration, or visual. Do NOT generate images for normal questions, explanations, "
+            "calculations, or text-only answers. If you include the tag, put it at the END of your response. "
+            "The prompt inside the tag must be in English and highly descriptive. "
+            "You can generate ANY type of image — technical diagrams, 3D renders, photos, sketches, "
+            "infographics, flow charts, or conceptual art — not just diagrams.\n\n"
+            "Course context:\n" + context
+        )
+
+        if extra_text_context:
+            system_prompt += "\n\nAttached file content:\n" + extra_text_context
+
+        # Build conversation for API
+        conversation_messages = [{"role": "system", "content": system_prompt}]
+        num_messages = len(current_chat["messages"])
+        for i, msg in enumerate(current_chat["messages"]):
+            if i == num_messages - 1 and image_data_url:
+                conversation_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": msg["content"]},
+                        {"type": "image_url", "image_url": {"url": image_data_url}}
+                    ]
+                })
+            else:
+                conversation_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        # Language reminder integrated into user message instead of a second system message
+        conversation_messages.append({
+            "role": "user",
+            "content": "Reminder: respond in the same language as this message only: " + question
+        })
+
+        # ------------------------------------------------------------------
+        # Robust model fallback — Groq deprecates models often.
+        # We try multiple models in priority order so the app never dies.
+        # ------------------------------------------------------------------
+        GROQ_TEXT_MODELS = [
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.6-27b",
+            "openai/gpt-oss-20b",
+            "llama-3.1-8b-instant",
+        ]
+        GROQ_VISION_MODELS = [
+            "llama-3.2-11b-vision-preview",
+            "llama-3.2-90b-vision-preview",
+        ]
+
+        def try_groq_models(models, messages):
+            """Try each model until one works. Returns (answer, model_used)."""
+            last_err = None
+            for m in models:
+                try:
+                    resp = groq_client.chat.completions.create(model=m, messages=messages)
+                    return resp.choices[0].message.content, m
+                except Exception as e:
+                    last_err = e
+                    err_msg = str(e).lower()
+                    if "not found" in err_msg or "does not exist" in err_msg or "deprecated" in err_msg:
+                        continue  # Try next model
+                    raise  # Real error, stop
+            raise last_err
+
+        with st.spinner(t["thinking"]):
+            answer = None
+            model_used = None
+
+            # 1) Try Gemini first if selected and no image
+            if st.session_state.ai_provider == "Gemini" and not image_data_url:
+                try:
+                    answer = call_gemini(system_prompt, conversation_messages, st.secrets.get("GEMINI_API_KEY"))
+                    model_used = "gemini-2.0-flash"
+                except Exception as e:
+                    st.warning("Gemini failed, falling back to Groq: " + str(e))
+                    answer = None
+
+            # 2) Groq with cascading fallback
+            if answer is None:
+                try:
+                    if image_data_url:
+                        # Try vision models first, then fall back to text-only
+                        try:
+                            answer, model_used = try_groq_models(GROQ_VISION_MODELS, conversation_messages)
+                        except Exception:
+                            # Vision models all dead — strip image and use text model
+                            st.warning("Vision models unavailable. Analyzing image description with text model...")
+                            # Rebuild messages without the image_url payload
+                            text_only_messages = [{"role": "system", "content": system_prompt}]
+                            for msg in current_chat["messages"]:
+                                text_only_messages.append({"role": msg["role"], "content": msg["content"]})
+                            text_only_messages.append({
+                                "role": "user",
+                                "content": "Reminder: respond in the same language as this message only: " + question
+                            })
+                            answer, model_used = try_groq_models(GROQ_TEXT_MODELS, text_only_messages)
+                    else:
+                        answer, model_used = try_groq_models(GROQ_TEXT_MODELS, conversation_messages)
+                except Exception as e:
+                    st.error("All AI models failed. Please check your API key or try again later. Error: " + str(e))
+                    st.stop()
+
+        # Check if the response asks to generate an image
+        if "[GENERATE_IMAGE:" in answer:
+            parts = answer.split("[GENERATE_IMAGE:")
+            text_part = parts[0].strip()
+            image_prompt_part = parts[1].split("]", 1)[0].strip() if len(parts) > 1 else ""
+            remaining_text = parts[1].split("]", 1)[1].strip() if len(parts) > 1 and "]" in parts[1] else ""
+
+            # Display text before image
+            if text_part:
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{text_part}</div></div>",
+                    unsafe_allow_html=True
+                )
+
+            # Generate and display image via Pollinations (FREE, no key)
+            assistant_image_data_url = None
+            if image_prompt_part:
+                with st.spinner("🎨 Generating image..."):
+                    image_bytes = generate_image(image_prompt_part)
+                    if image_bytes:
+                        # Convert bytes to base64 data URL so it persists in chat history
+                        assistant_image_data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("utf-8")
+                        st.image(assistant_image_data_url, caption=image_prompt_part, use_container_width=True)
+                    else:
+                        st.warning("Could not generate image. The image service may be busy — please try again.")
+
+            # Display remaining text after image
+            if remaining_text:
+                final_answer = remaining_text + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{final_answer}</div></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                    f"<div class='aquanis-assistant-bubble-inner'>{t['sources_label']}: {', '.join(sources)}</div></div>",
+                    unsafe_allow_html=True
+                )
+
+            answer = text_part + ("\n\n" if text_part and remaining_text else "") + remaining_text
+        else:
+            answer = answer + "\n\n" + t["sources_label"] + ": " + ", ".join(sources)
+            st.markdown(
+                f"<div class='aquanis-assistant-bubble'><span class='aquanis-logo'>💧</span>"
+                f"<div class='aquanis-assistant-bubble-inner'>{answer}</div></div>",
+                unsafe_allow_html=True
+            )
+
+        assistant_msg = {"role": "assistant", "content": answer}
+        if assistant_image_data_url:
+            assistant_msg["image"] = assistant_image_data_url
+        current_chat["messages"].append(assistant_msg)
+        if is_logged_in:
+            save_chats(user_identity, st.session_state.chats)
+        st.rerun()
+
+    st.markdown(f"<p class='aquanis-footer-note'>{t['footer_note']}</p>", unsafe_allow_html=True)
+
+except Exception as e:
+    st.error("An error occurred while running Aquanis:")
+    st.code(traceback.format_exc())
+
